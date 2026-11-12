@@ -90,7 +90,9 @@ export function unpackState(data) {
     const ids = new Set();
     const sounds = frame.sounds.map(sound => {
       if (!knownSounds.has(sound.id) || ids.has(sound.id) || !finite(sound.x) || !finite(sound.y) || sound.x < 0 || sound.x > 1 || sound.y < 0 || sound.y > 1) return invalid();
-      ids.add(sound.id); return { id: sound.id, x: sound.x, y: sound.y };
+      if (sound.parked !== undefined && (typeof sound.parked !== 'boolean' || (sound.parked && !/^seed-[0-4]$/.test(sound.id)))) return invalid();
+      ids.add(sound.id);
+      return { id: sound.id, x: sound.x, y: sound.y, ...(sound.parked !== undefined ? { parked: sound.parked } : {}) };
     });
     const seen = new Set();
     const marks = frame.paths.map(index => {

@@ -54,6 +54,18 @@ document.querySelector('#run').onclick = async () => {
       await pointer('pointerup', ...points.at(-1), pointerType);
     };
     check(document.querySelectorAll('[data-sound]').length === 5 && document.querySelectorAll('.path').length === 0, 'Five identical starting materials; empty sketchbook');
+    const homeBounds = canvas.getBoundingClientRect();
+    const homes = [...document.querySelectorAll('[data-sound]')].map(node => node.transform.baseVal.getItem(0).matrix);
+    check(homes.every(p => p.f <= 64) && homes.at(-1).e >= homeBounds.width - 33, 'Defaults begin in a compact top-right row, leaving the main canvas open');
+    // Move the materials into the workspace to exercise the listening gestures.
+    const workspace = [[.25, .31], [.63, .23], [.46, .49], [.75, .62], [.28, .72]];
+    for (let i = 0; i < workspace.length; i++) {
+      const target = document.querySelector(`[data-sound="seed-${i}"]`);
+      const start = target.transform.baseVal.getItem(0).matrix;
+      await pointer('pointerdown', start.e / homeBounds.width, start.f / homeBounds.height, 0, 'mouse', target.querySelector('circle'));
+      await pointer('pointermove', ...workspace[i], 400);
+      await pointer('pointerup', ...workspace[i], 400);
+    }
     await pointer('pointerdown', .25, .31, 0, 'mouse', document.querySelector('[data-sound="seed-0"] circle'));
     await pointer('pointerup', .25, .31, 100);
     await pause(100);

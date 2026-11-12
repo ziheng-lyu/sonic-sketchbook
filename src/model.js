@@ -14,7 +14,7 @@ export function reducer(state, action) {
   const previous = { sounds: state.sounds, paths: state.paths, selected: state.selected };
   let next;
   if (action.type === 'path') next = { ...state, paths: [...state.paths, action.path], selected: action.path.id };
-  if (action.type === 'move') next = { ...state, sounds: state.sounds.map(sound => sound.id === action.id ? { ...sound, ...action.position } : sound) };
+  if (action.type === 'move') next = { ...state, sounds: state.sounds.map(sound => sound.id === action.id ? { ...sound, ...action.position, ...(sound.parked ? { parked: false } : {}) } : sound) };
   if (action.type === 'add') next = { ...state, sounds: [...state.sounds, ...action.sounds] };
   return next ? { ...next, history: [...state.history, previous] } : state;
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { circleEntry, crossings, nearestPath, keepOnCanvas } from '../src/geometry.js';
+import { circleEntry, crossings, nearestPath, keepOnCanvas, soundPosition } from '../src/geometry.js';
 import { initialState, reducer } from '../src/model.js';
 import { AudioEngine, seedSamples } from '../src/audio.js';
 import { Microphone } from '../src/recorder.js';
@@ -47,7 +47,7 @@ test('move/add/undo preserve original path events and duration, including pauses
   state = reducer(state, { type: 'undo' });
   assert.equal(state.sounds.length, 5);
   state = reducer(state, { type: 'undo' });
-  assert.equal(state.sounds[0].x, .25);
+  assert.deepEqual(state.sounds[0], initialState().sounds[0]);
   assert.equal(JSON.stringify(state.paths), original);
   state = reducer(state, { type: 'undo' });
   assert.equal(state.paths.length, 0);
@@ -146,4 +146,29 @@ test('a permission grant arriving after teardown releases its stream immediately
   const pending = mic.start(); mic.dispose();
   resolve({ getTracks: () => [{ stop() { stopped = true; } }] });
   await pending; assert.equal(stopped, true);
+});
+
+test('unused defaults stay spaced in the top-right corner on desktop and narrow screens', () => {
+  for (const size of [{ width: 1280, height: 720 }, { width: 320, height: 640 }]) {
+    const positions = initialState().sounds.map(sound => soundPosition(sound, size));
+    const xs = positions.map(p => p.x * size.width);
+    assert.ok(positions.every(p => p.y * size.height <= 64));
+    assert.ok(xs[0] >= size.width - 224);
+    assert.equal(xs.at(-1), size.width - 32);
+    for (let i = 1; i < xs.length; i++) assert.ok(xs[i] - xs[i - 1] >= 44);
+  }
+});
+
+test('moving a default makes its position editable; undo returns it to the corner row', () => {
+  const original = initialState();
+  const moved = reducer(original, { type: 'move', id: 'seed-2', position: { x: .4, y: .5 } });
+  assert.equal(moved.sounds[2].parked, false);
+  assert.deepEqual(soundPosition(moved.sounds[2], { width: 390, height: 844 }), { x: .4, y: .5 });
+  assert.equal(moved.sounds[0].parked, true);
+  const undone = reducer(moved, { type: 'undo' });
+  assert.deepEqual(undone, original);
+});
+
+test('legacy sounds without a corner-row flag preserve their saved positions', () => {
+  assert.deepEqual(soundPosition({ id: 'seed-0', x: .25, y: .31 }, { width: 1280, height: 720 }), { x: .25, y: .31 });
 });

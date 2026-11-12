@@ -2,7 +2,7 @@ import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AudioEngine } from './audio.js';
 import { Microphone } from './recorder.js';
-import { crossings, keepOnCanvas, nearestPath, SOUND_RADIUS } from './geometry.js';
+import { crossings, keepOnCanvas, nearestPath, soundPosition, SOUND_RADIUS } from './geometry.js';
 import { initialState, reducer } from './model.js';
 import { loadSketch, saveSketch } from './share.js';
 import './style.css';
@@ -39,7 +39,7 @@ function App() {
   const engine = useRef(null), microphone = useRef(null), playTimer = useRef(null);
   const playbackEpoch = useRef(0), mounted = useRef(true), current = useRef(state);
   current.current = state;
-  const viewSounds = state.sounds.map(sound => ({ ...sound, ...keepOnCanvas(sound, size) }));
+  const viewSounds = state.sounds.map(sound => ({ ...sound, ...soundPosition(sound, size) }));
   if (!engine.current) engine.current = new AudioEngine();
 
   function report(message) { if (mounted.current) setError(message); }
@@ -225,7 +225,10 @@ function App() {
       y: .14 + ((n * .41421356237 + index * .19) % 1) * .65,
     }));
     return candidates.reduce((best, p) => {
-      const clearance = q => Math.min(...sounds.map(sound => Math.hypot((sound.x - q.x) * size.width, (sound.y - q.y) * size.height)));
+      const clearance = q => Math.min(...sounds.map(sound => {
+        const p = soundPosition(sound, size);
+        return Math.hypot((p.x - q.x) * size.width, (p.y - q.y) * size.height);
+      }));
       return clearance(p) > clearance(best) ? p : best;
     }, candidates[0]);
   }

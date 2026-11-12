@@ -1,11 +1,23 @@
 export const SOUND_RADIUS = 16;
-export const initialSounds = [
-  { id: 'seed-0', x: .25, y: .31 },
-  { id: 'seed-1', x: .63, y: .23 },
-  { id: 'seed-2', x: .46, y: .49 },
-  { id: 'seed-3', x: .75, y: .62 },
-  { id: 'seed-4', x: .28, y: .72 },
-];
+function defaultSoundPosition(index, size) {
+  const gap = Math.min(48, Math.max(0, (size.width - 64) / 4));
+  return keepOnCanvas({
+    x: (size.width - 32 - (4 - index) * gap) / size.width,
+    y: Math.min(size.height / 2, size.width <= 600 ? 64 : 40) / size.height,
+  }, size);
+}
+
+export const initialSounds = Array.from({ length: 5 }, (_, index) => ({
+  id: `seed-${index}`,
+  ...defaultSoundPosition(index, { width: 1280, height: 720 }),
+  parked: true,
+}));
+
+export function soundPosition(sound, size) {
+  const index = sound.parked === true && /^seed-[0-4]$/.test(sound.id)
+    ? Number(sound.id.slice(-1)) : null;
+  return index === null ? keepOnCanvas(sound, size) : defaultSoundPosition(index, size);
+}
 
 export function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 

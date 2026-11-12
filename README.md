@@ -29,6 +29,8 @@ The interface shows no instructions or sound labels. Accessible names are availa
 
 ## Behavior and scope
 
+Five identical circles begin in a compact row at the top right, leaving the main canvas open for personal material. Unused defaults stay in that corner when the viewport changes. Dragging one into the workspace makes it freely positioned; Undo returns it to the row. Previously saved links retain their saved arrangements.
+
 Five distinct nonverbal sounds are synthesized as original PCM buffers in Web Audio. Imported and recorded material is decoded into the same buffer registry. There is no remote processing, interpretation, recommendation, or generation in response to marks.
 
 Pointer events support mouse, pen and touch. Circle entry is tested against each complete movement segment so sparse pointer samples still detect fast crossings in spatial order. Timing is interpolated between gesture samples. Stationary samples and the gesture duration retain pauses. Each completed path stores its sound IDs and trigger times independently of circle positions. Replay schedules those original events directly on the audio clock, including repeated sounds and overlapping tails.
@@ -47,7 +49,7 @@ For local integration testing, run `node tests/storage-server.mjs` in one termin
 
 ## Verification
 
-`npm test` runs 21 checks covering crossing geometry, timing, selection, undo, distinct PCM buffers, replay scheduling, decoded audio, microphone lifecycle, encrypted snapshot round trips, cross-client reopening, retained undo, upload authorization, immutable saves, and malformed links.
+`npm test` runs 25 checks covering crossing geometry, timing, selection, undo, distinct PCM buffers, replay scheduling, decoded audio, microphone lifecycle, encrypted snapshot round trips, cross-client reopening, retained undo, upload authorization, immutable saves, and malformed links.
 
 With the dev server running, open `/tests/browser.html` and click **Run browser checks**. The development-only page exercises the actual React event handlers, Web Audio buffers and clock, real WAV decoding, and real MediaRecorder encoding/decoding from a controlled audio stream. It checks touch event handling, importing, recording, permission denial, failed imports, and responsive layouts. The additional sharing checks use the local integration service and reopen a saved link in a fresh page to verify restored audio materials, marks, positions, selection, and undo. The test page is excluded from the production build. Native browser gestures also verified circle audition, dragging, multiple paths, selection, and replay controls.
 

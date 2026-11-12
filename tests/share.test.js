@@ -133,3 +133,12 @@ test('errors keep caller state intact and never produce a misleading saved link'
   assert.equal(await pending, false);
   assert.equal(audio.buffers.get('shared'), oldBuffer);
 });
+
+test('saved links retain corner-row state and moved defaults, and older links keep their arrangement', () => {
+  const initial = initialState();
+  const moved = reducer(initial, { type: 'move', id: 'seed-1', position: { x: .5, y: .6 } });
+  assert.deepEqual(unpackState(packState(moved, new Map())).state, moved);
+  const legacy = initialState();
+  legacy.sounds = legacy.sounds.map(({ parked, ...sound }) => sound);
+  assert.deepEqual(unpackState(packState(legacy, new Map())).state, legacy);
+});
