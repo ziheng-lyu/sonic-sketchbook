@@ -1,0 +1,139 @@
+// Development-only integration checks. This page is excluded from the build.
+// It exercises the real React handlers, decoder, audio clock and MediaRecorder.
+import { AudioEngine } from '../src/audio.js';
+const calls = [], replays = [];
+const originalPlay = AudioEngine.prototype.play;
+const originalReplay = AudioEngine.prototype.replay;
+AudioEngine.prototype.play = function (id, when) {
+  const source = originalPlay.call(this, id, when);
+  calls.push({ id, when, buffer: source?.buffer, state: this.context().state });
+  return source;
+};
+AudioEngine.prototype.replay = function (path) {
+  replays.push(JSON.parse(JSON.stringify(path)));
+  return originalReplay.call(this, path);
+};
+await import('../src/main.jsx');
+const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const $ = label => document.querySelector(`[aria-label="${label}"]`);
+function check(condition, name) {
+  const row = document.createElement('li');
+  row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}`;
+  row.dataset.result = condition ? 'pass' : 'fail';
+  document.querySelector('#results').append(row);
+  if (!condition) throw new Error(name);
+}
+function wav() {
+  const length = 4410, view = new DataView(new ArrayBuffer(44 + length * 2));
+  const text = (offset, value) => [...value].forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)));
+  text(0, 'RIFF'); view.setUint32(4, 36 + length * 2, true); text(8, 'WAVE'); text(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, 44100, true); view.setUint32(28, 88200, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  text(36, 'data'); view.setUint32(40, length * 2, true);
+  for (let i = 0; i < length; i++) view.setInt16(44 + i * 2, Math.sin(i * 2 * Math.PI * 330 / 44100) * 5000, true);
+  return new File([view.buffer], 'test-tone.wav', { type: 'audio/wav' });
+}
+document.querySelector('#run').onclick = async () => {
+  document.querySelector('#run').disabled = true;
+  try {
+    await frame();
+    const canvas = document.querySelector('svg.canvas');
+    // Dispatched test events have no OS pointer, so capture alone is stubbed.
+    canvas.setPointerCapture = () => {};
+    canvas.hasPointerCapture = () => false;
+    const pointer = async (type, x, y, t, pointerType = 'mouse', target = canvas) => {
+      const bounds = canvas.getBoundingClientRect();
+      const event = new PointerEvent(type, { bubbles: true, pointerId: 1, pointerType, isPrimary: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: bounds.left + bounds.width * x, clientY: bounds.top + bounds.height * y });
+      Object.defineProperty(event, 'timeStamp', { value: 10000 + t });
+      target.dispatchEvent(event); await frame();
+    };
+    const draw = async (points, pointerType = 'mouse') => {
+      await pointer('pointerdown', ...points[0], pointerType);
+      for (const p of points.slice(1)) await pointer('pointermove', ...p, pointerType);
+      await pointer('pointerup', ...points.at(-1), pointerType);
+    };
+    check(document.querySelectorAll('[data-sound]').length === 5 && document.querySelectorAll('.path').length === 0, 'Five identical starting materials; empty sketchbook');
+    await pointer('pointerdown', .25, .31, 0, 'mouse', document.querySelector('[data-sound="seed-0"] circle'));
+    await pointer('pointerup', .25, .31, 100);
+    await pause(100);
+    check(calls.length === 1 && calls[0].buffer instanceof AudioBuffer && calls[0].state === 'running', 'Click starts a real playable Web Audio buffer');
+    const before = calls.length;
+    await draw([[.04, .49, 0], [.96, .49, 900], [.96, .49, 1900], [.04, .49, 2800]]);
+    check(document.querySelectorAll('.path').length === 1 && calls.length === before + 2, 'Fast crossings and revisits each trigger once; pause creates no extra trigger');
+    $('Replay selected path').click(); await frame();
+    const captured = replays.at(-1);
+    check(captured.events.length === 2 && captured.events.every(e => e.soundId === 'seed-2') && captured.duration === 2800 && captured.events[1].at - captured.events[0].at > 1700, 'Replay retains gesture order and the long pause');
+    const scheduled = calls.slice(-2);
+    check(Math.abs((scheduled[1].when - scheduled[0].when) * 1000 - (captured.events[1].at - captured.events[0].at)) < .01, 'Original timing is scheduled on the real audio clock');
+    $('Stop playback').click(); await frame();
+    const transform = document.querySelector('[data-sound="seed-2"]').getAttribute('transform');
+    const beforeDrag = calls.length;
+    await pointer('pointerdown', .46, .49, 0, 'touch', document.querySelector('[data-sound="seed-2"] circle'));
+    await pointer('pointermove', .61, .58, 400, 'touch');
+    await pointer('pointerup', .61, .58, 400, 'touch');
+    check(document.querySelector('[data-sound="seed-2"]').getAttribute('transform') !== transform && calls.length === beforeDrag && document.querySelectorAll('.path').length === 1, 'Touch dragging moves a circle without auditioning or drawing');
+    $('Replay selected path').click(); await frame();
+    check(JSON.stringify(replays.at(-1).events) === JSON.stringify(captured.events), 'Moving the sound preserves the earlier path sequence and timing');
+    $('Stop playback').click(); await frame();
+    await draw([[.05, .88, 0], [.9, .88, 700]], 'touch');
+    check(document.querySelectorAll('.path').length === 2 && document.querySelectorAll('.path.selected').length === 1, 'Touch drawing adds a second independent, selected path');
+    await pointer('pointerdown', .1, .49, 0); await pointer('pointerup', .1, .49, 100);
+    check(document.querySelector('.path').getAttribute('aria-pressed') === 'true', 'Tapping an earlier mark selects that path');
+    $('Undo').click(); await frame();
+    $('Undo').click(); await frame();
+    check(document.querySelectorAll('.path').length === 1 && document.querySelector('[data-sound="seed-2"]').getAttribute('transform') === transform, 'Undo removes the latest path then restores the moved circle');
+    const input = document.querySelector('input[type="file"]');
+    const transfer = new DataTransfer(); transfer.items.add(wav()); input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await pause(250); await frame();
+    check(document.querySelectorAll('[data-sound]').length === 6 && !document.querySelector('[role="alert"]'), 'Audio upload decodes a real WAV and adds a neutral circle');
+    const added = document.querySelectorAll('[data-sound]')[5];
+    added.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
+    check(calls.at(-1).buffer instanceof AudioBuffer && calls.at(-1).buffer.length === 4410, 'Uploaded audio plays its decoded buffer');
+    $('Undo').click(); await frame();
+    check(document.querySelectorAll('[data-sound]').length === 5, 'Undo removes an uploaded circle');
+    let requested, track;
+    const ctx = new AudioContext(); await ctx.resume();
+    const oscillator = ctx.createOscillator(), destination = ctx.createMediaStreamDestination();
+    oscillator.frequency.value = 440; oscillator.connect(destination); oscillator.start();
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { configurable: true, value: async constraints => {
+      requested = constraints; track = destination.stream.getAudioTracks()[0]; return destination.stream;
+    } });
+    $('Record sound').click(); await pause(350); await frame();
+    check(!!$('Finish recording') && JSON.stringify(requested) === '{"audio":true}', 'Recording requests browser-managed audio permission and exposes Stop');
+    $('Finish recording').click(); await pause(350); await frame();
+    check(document.querySelectorAll('[data-sound]').length === 6 && track.readyState === 'ended' && !!$('Record sound'), 'Real MediaRecorder audio decodes, adds a circle, and releases the stream');
+    oscillator.stop(); await ctx.close();
+    const recorded = document.querySelectorAll('[data-sound]')[5];
+    recorded.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
+    check(calls.at(-1).buffer instanceof AudioBuffer && calls.at(-1).buffer.duration > .1, 'Recorded sound is playable');
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { configurable: true, value: async () => { throw new DOMException('Denied', 'NotAllowedError'); } });
+    $('Record sound').click(); await frame();
+    check(document.querySelector('[role="alert"]')?.textContent.includes('denied') && !$('Record sound').disabled, 'Denied microphone access gives a recoverable error');
+    const bad = new DataTransfer(); bad.items.add(new File(['invalid'], 'bad.wav', { type: 'audio/wav' })); input.files = bad.files;
+    input.dispatchEvent(new Event('change', { bubbles: true })); await pause(100); await frame();
+    check(document.querySelector('[role="alert"]')?.textContent.includes('could not be opened') && !$('Upload audio').disabled, 'Invalid audio leaves upload usable');
+    $('Dismiss error').click();
+    document.querySelector('#root').style.cssText = 'width:1200px;height:800px';
+    document.querySelector('main').style.height = '100%';
+    await frame();
+    const desktop = canvas.getBoundingClientRect();
+    check(desktop.width === 1200 && desktop.height === 800 && [...document.querySelectorAll('.controls button')].every(button => button.getBoundingClientRect().right <= 1200), 'Desktop layout fills 1200 by 800 with reachable controls');
+    const desktopCount = calls.length;
+    await draw([[.04, .49, 0], [.96, .49, 800]]);
+    check(calls.length > desktopCount && document.querySelectorAll('.path').length === 2, 'Crossing sounds and drawing remain functional after desktop resize');
+    await pointer('pointerdown', .25, .31, 0, 'mouse', document.querySelector('[data-sound="seed-0"] circle'));
+    await pointer('pointermove', 0, .31, 400);
+    await pointer('pointerup', 0, .31, 400);
+    document.querySelector('#root').style.width = '320px';
+    document.querySelector('#root').style.height = '640px';
+    await frame();
+    const narrowSound = document.querySelector('[data-sound="seed-0"]').getBoundingClientRect();
+    check(canvas.getBoundingClientRect().width === 320 && narrowSound.left >= 0, 'Circles at the edge remain visible after shrinking to a 320px screen');
+    const summary = document.createElement('strong'); summary.textContent = 'All browser checks passed.'; document.querySelector('#report').append(summary);
+  } catch (error) {
+    const summary = document.createElement('strong'); summary.textContent = `Browser checks stopped: ${error.message}`; document.querySelector('#report').append(summary);
+    console.error(error);
+  }
+};
