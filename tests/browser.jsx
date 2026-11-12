@@ -90,7 +90,7 @@ document.querySelector('#run').onclick = async () => {
     check(document.querySelectorAll('[data-sound]').length === 6 && !document.querySelector('[role="alert"]'), 'Audio upload decodes a real WAV and adds a neutral circle');
     const added = document.querySelectorAll('[data-sound]')[5];
     added.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
-    check(calls.at(-1).buffer instanceof AudioBuffer && calls.at(-1).buffer.length === 4410, 'Uploaded audio plays its decoded buffer');
+    check(calls.at(-1).buffer instanceof AudioBuffer && Math.abs(calls.at(-1).buffer.duration - .1) < .001, 'Uploaded audio plays its decoded buffer');
     $('Undo').click(); await frame();
     check(document.querySelectorAll('[data-sound]').length === 5, 'Undo removes an uploaded circle');
     let requested, track;
@@ -131,6 +131,30 @@ document.querySelector('#run').onclick = async () => {
     await frame();
     const narrowSound = document.querySelector('[data-sound="seed-0"]').getBoundingClientRect();
     check(canvas.getBoundingClientRect().width === 320 && narrowSound.left >= 0, 'Circles at the edge remain visible after shrinking to a 320px screen');
+    const soundsBeforeSave = [...document.querySelectorAll('[data-sound]')].map(node => ({ id: node.dataset.sound, transform: node.getAttribute('transform') }));
+    const pathsBeforeSave = [...document.querySelectorAll('polyline.path')].map(node => ({ points: node.getAttribute('points'), selected: node.getAttribute('aria-pressed') }));
+    $('Save and share sketch').click();
+    for (let i = 0; i < 100 && !document.querySelector('[aria-label="Shareable sketch link"]'); i++) await pause(100);
+    const savedURL = $('Shareable sketch link')?.value;
+    check(!!savedURL && savedURL.length < 160, 'Save produces a short shareable link with the recorded sound and all marks');
+    const reopened = document.createElement('iframe');
+    reopened.style.cssText = 'position:fixed;width:320px;height:640px;left:0;top:0;border:0;visibility:hidden';
+    const rootURL = new URL('../', window.location.href); rootURL.hash = new URL(savedURL).hash;
+    reopened.src = rootURL.href; document.body.append(reopened);
+    await new Promise((resolve, reject) => { reopened.onload = resolve; setTimeout(() => reject(new Error('Restore frame timed out')), 15000); });
+    let restored;
+    for (let i = 0; i < 100; i++) {
+      restored = reopened.contentDocument;
+      if (restored?.querySelector('main') && !restored.querySelector('[aria-busy="true"]')) break;
+      await pause(100);
+    }
+    check(!restored.querySelector('[role="alert"]') && restored.querySelectorAll('[data-sound]').length === soundsBeforeSave.length && restored.querySelectorAll('polyline.path').length === pathsBeforeSave.length, 'Opening the saved link in another page restores every sound and mark');
+    check([...restored.querySelectorAll('[data-sound]')].every((node, index) => node.dataset.sound === soundsBeforeSave[index].id && node.getAttribute('transform') === soundsBeforeSave[index].transform), 'Restored circles keep the same identities and arrangement');
+    check([...restored.querySelectorAll('polyline.path')].every((node, index) => node.getAttribute('points') === pathsBeforeSave[index].points && node.getAttribute('aria-pressed') === pathsBeforeSave[index].selected), 'Restored paths keep their geometry and selected state');
+    restored.querySelector('[aria-label="Undo"]').click(); await pause(50);
+    check(restored.querySelector('[data-sound="seed-0"]').getAttribute('transform') !== soundsBeforeSave[0].transform, 'An opened link restores the undo history, including the last circle movement');
+    check(document.querySelector('[data-sound="seed-0"]').getAttribute('transform') === soundsBeforeSave[0].transform, 'Editing the reopened snapshot leaves the original page unchanged');
+    reopened.remove();
     const summary = document.createElement('strong'); summary.textContent = 'All browser checks passed.'; document.querySelector('#report').append(summary);
   } catch (error) {
     const summary = document.createElement('strong'); summary.textContent = `Browser checks stopped: ${error.message}`; document.querySelector('#report').append(summary);

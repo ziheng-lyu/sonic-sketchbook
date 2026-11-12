@@ -26,6 +26,7 @@ export class AudioEngine {
   constructor(contextFactory = () => new (window.AudioContext || window.webkitAudioContext)()) {
     this.contextFactory = contextFactory;
     this.buffers = new Map();
+    this.sources = new Map();
     this.voices = new Set();
   }
   context() {
@@ -66,9 +67,26 @@ export class AudioEngine {
   }
   async audition(id) { await this.unlock(); this.play(id); }
   async import(id, arrayBuffer) {
+    const original = arrayBuffer.slice(0);
     const buffer = await this.context().decodeAudioData(arrayBuffer);
     if (!buffer.length) throw new Error('empty-audio');
     this.buffers.set(id, buffer);
+    this.sources.set(id, original);
+  }
+  async restoreSources(sources, isCurrent = () => true) {
+    const prepared = new Map();
+    for (const [id, bytes] of sources) {
+      if (!isCurrent()) return false;
+      const buffer = await this.context().decodeAudioData(bytes.slice(0));
+      if (!buffer.length) throw new Error('empty-audio');
+      prepared.set(id, { buffer, bytes });
+    }
+    if (!isCurrent()) return false;
+    for (const [id, value] of prepared) {
+      this.buffers.set(id, value.buffer);
+      this.sources.set(id, value.bytes.slice(0));
+    }
+    return true;
   }
   stop() {
     for (const source of this.voices) { try { source.stop(); } catch { /* Already ended. */ } }

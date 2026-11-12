@@ -5,6 +5,7 @@ export function initialState() {
 }
 
 export function reducer(state, action) {
+  if (action.type === 'restore') return action.state;
   if (action.type === 'select') return { ...state, selected: action.id };
   if (action.type === 'undo') {
     if (!state.history.length) return state;
