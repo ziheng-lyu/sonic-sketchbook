@@ -4,11 +4,15 @@ import { AudioEngine } from './audio.js';
 import { Microphone } from './recorder.js';
 import { crossings, keepOnCanvas, nearestPath, soundPosition, SOUND_RADIUS } from './geometry.js';
 import { initialState, reducer } from './model.js';
-import { loadSketch, saveSketch } from './share.js';
+import { isSavedLink, loadSketch, saveSketch } from './share.js';
+import * as projectStore from './projects.js';
+import { createProjectBundle, openProjectBundle, projectName } from './bundle.js';
+import { ProjectPanel } from './ProjectPanel.jsx';
 import './style.css';
 
 function Icon({ name }) {
   const icons = {
+    folder: <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>,
     upload: <><path d="M12 16V4m-4 4 4-4 4 4"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></>,
     mic: <><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 10v1a6 6 0 0 0 12 0v-1M12 17v4m-3 0h6"/></>,
     undo: <><path d="m8 5-5 5 5 5"/><path d="M3 10h10a7 7 0 0 1 7 7v2"/></>,
@@ -30,7 +34,7 @@ function App() {
   const [recording, setRecording] = useState('idle');
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(window.location.hash.startsWith('#s='));
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [shareURL, setShareURL] = useState('');
   const [copied, setCopied] = useState(false);
@@ -41,6 +45,116 @@ function App() {
   current.current = state;
   const viewSounds = state.sounds.map(sound => ({ ...sound, ...soundPosition(sound, size) }));
   if (!engine.current) engine.current = new AudioEngine();
+
+  const [project, setProject] = useState(() => ({ id: crypto.randomUUID(), name: 'Untitled sketch', saved: false }));
+  const [projectList, setProjectList] = useState([]);
+  const [projectMenu, setProjectMenu] = useState(false);
+  const [projectWorking, setProjectWorking] = useState(false);
+  const [localSaving, setLocalSaving] = useState(false);
+  const [localStatus, setLocalStatus] = useState('Not saved yet');
+  const projectRef = useRef(project), savedProjectRef = useRef(null), projectQueue = useRef(Promise.resolve());
+  const autoSaveTimer = useRef(null);
+  const projectFileInput = useRef(null), saveProjectAction = useRef(null), navigation = useRef(0);
+  projectRef.current = project;
+
+  async function refreshProjects() { const items = await projectStore.listProjects(); if (mounted.current) setProjectList(items); }
+  function persistCurrent() {
+    const snapshot = current.current, metadata = { ...projectRef.current }, sources = new Map(engine.current.sources);
+    const task = async () => {
+      setLocalSaving(true); setLocalStatus('Saving…');
+      try {
+        const saved = await projectStore.saveProject(metadata, snapshot, sources);
+        if (mounted.current && projectRef.current.id === metadata.id) {
+          savedProjectRef.current = { state: snapshot, name: projectName(metadata.name) };
+          const next = { ...projectRef.current, saved: true, updatedAt: saved.updatedAt };
+          if (next.name === metadata.name) next.name = saved.name;
+          projectRef.current = next; setProject(next); setLocalStatus('Saved in this browser');
+          if (!restoring.current && isSavedLink(window.location.hash)) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+        await refreshProjects(); return saved;
+      } catch (failure) { if (mounted.current) setLocalStatus('Not saved'); throw failure; }
+      finally { if (mounted.current) setLocalSaving(false); }
+    };
+    const pending = projectQueue.current.catch(() => {}).then(task);
+    projectQueue.current = pending;
+    return pending;
+  }
+  saveProjectAction.current = () => {
+    if (recording !== 'idle' || importing || projectWorking || restoring.current) return;
+    return persistCurrent().catch(failure => report(failure.message));
+  };
+  async function checkpoint() {
+    const p = projectRef.current, doc = current.current;
+    if (p.saved || doc.history.length || engine.current.sources.size || p.name !== 'Untitled sketch') await persistCurrent();
+    else await projectQueue.current.catch(() => {});
+  }
+  function setActiveProject(value) { projectRef.current = value; setProject(value); }
+  async function installProject(saved, metadata, token) {
+    if (token !== navigation.current) return false;
+    const ready = await engine.current.restoreSources(saved.sources, () => mounted.current && token === navigation.current);
+    if (!ready || token !== navigation.current) return false;
+    gesture.current = null; setDraft(null); setMoving(null); stopPlayback();
+    current.current = saved.state; dispatch({ type: 'restore', state: saved.state });
+    setActiveProject(metadata);
+    savedProjectRef.current = metadata.saved ? { state: saved.state, name: projectName(metadata.name) } : null;
+    setLocalStatus(metadata.saved ? 'Saved in this browser' : 'Not saved yet');
+    lastSaved.current = null; setShareURL(''); setError('');
+    return true;
+  }
+  async function changeProject(id) {
+    if (projectWorking || restoring.current || recording !== 'idle' || importing) return;
+    if (id === projectRef.current.id) { setProjectMenu(false); return; }
+    clearTimeout(autoSaveTimer.current);
+    const token = ++navigation.current;
+    restoring.current = true; setProjectWorking(true); setLoading(true);
+    gesture.current = null; setDraft(null); setMoving(null); stopPlayback();
+    try {
+      await checkpoint();
+      const saved = id ? await projectStore.openProject(id) : { state: initialState(), sources: new Map() };
+      const metadata = id ? saved.project : { id: crypto.randomUUID(), name: 'Untitled sketch', saved: false };
+      if (await installProject(saved, metadata, token)) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        await projectStore.rememberProject(id || null);
+        setProjectMenu(!id);
+      }
+    } catch (failure) { report(failure.message); }
+    finally { if (token === navigation.current) { restoring.current = false; setProjectWorking(false); setLoading(false); } }
+  }
+  async function exportProjectFile() {
+    if (projectWorking || restoring.current || recording !== 'idle' || importing) return;
+    setProjectWorking(true);
+    try {
+      const blob = await createProjectBundle(current.current, engine.current.sources, projectRef.current.name);
+      const url = URL.createObjectURL(blob), anchor = document.createElement('a');
+      anchor.href = url; anchor.download = projectName(projectRef.current.name).replace(/[^\w\- .]/g, '_') + '.sonic';
+      anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setLocalStatus('Project file exported');
+    } catch (failure) { report(failure.message); }
+    finally { setProjectWorking(false); }
+  }
+  async function importProjectFile(file) {
+    if (!file || projectWorking || restoring.current || recording !== 'idle' || importing) return;
+    clearTimeout(autoSaveTimer.current);
+    const token = ++navigation.current;
+    restoring.current = true; setLoading(true); setProjectWorking(true);
+    gesture.current = null; setDraft(null); setMoving(null); stopPlayback();
+    try {
+      const saved = await openProjectBundle(file);
+      await checkpoint();
+      if (await installProject(saved, { id: crypto.randomUUID(), name: saved.name, saved: false }, token)) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        await persistCurrent(); setProjectMenu(true);
+      }
+    } catch (failure) { report(failure.message); }
+    finally { if (token === navigation.current) { restoring.current = false; setLoading(false); setProjectWorking(false); } }
+  }
+  useEffect(() => {
+    if (!project.saved || loading || projectWorking || importing || recording !== 'idle') return;
+    if (savedProjectRef.current?.state === state && savedProjectRef.current.name === projectName(project.name)) return;
+    setLocalStatus('Unsaved changes');
+    autoSaveTimer.current = setTimeout(() => persistCurrent().catch(failure => report(failure.message)), 800);
+    return () => clearTimeout(autoSaveTimer.current);
+  }, [state, project.name, project.saved, project.id, loading, projectWorking, importing, recording]);
 
   function report(message) { if (mounted.current) setError(message); }
   function unlock() { engine.current.unlock().catch(() => report('Audio could not start. Try again.')); }
@@ -60,7 +174,7 @@ function App() {
 
   function shareError(failure) {
     const message = failure?.message || '';
-    return /^(This |An audio |The sketch |Please |Saving )/.test(message)
+    return /^(This |An audio |The |Please |Saving |Sharing |Project |Saved )/.test(message)
       ? message : 'The sketch could not be saved or opened. Please try again.';
   }
   async function copyLink(url = shareURL) {
@@ -71,41 +185,52 @@ function App() {
     if (saving || restoring.current || recording !== 'idle' || importing || gesture.current) return;
     setSaving(true); setError(''); setCopied(false);
     const snapshot = current.current;
+    const sharingProjectId = projectRef.current.id;
     try {
-      const url = lastSaved.current?.state === snapshot ? lastSaved.current.url
-        : await saveSketch(snapshot, engine.current.sources);
-      if (!mounted.current) return;
-      lastSaved.current = { state: snapshot, url };
+      const name = projectName(projectRef.current.name);
+      const url = lastSaved.current?.state === snapshot && lastSaved.current.name === name ? lastSaved.current.url
+        : await saveSketch(snapshot, engine.current.sources, window.location.href, fetch, name);
+      if (!mounted.current || projectRef.current.id !== sharingProjectId) return;
+      lastSaved.current = { state: snapshot, name, url };
       setShareURL(url);
-      window.history.replaceState(null, '', url);
+      if (!projectRef.current.saved) window.history.replaceState(null, '', url);
       await copyLink(url);
     } catch (failure) { report(shareError(failure)); }
     finally { if (mounted.current) setSaving(false); }
   }
 
   useEffect(() => {
-    let active = true, epoch = 0;
+    let active = true, first = true;
     async function restore() {
+      clearTimeout(autoSaveTimer.current);
+      const token = ++navigation.current;
       const hash = window.location.hash;
-      const version = ++epoch;
-      if (!hash.startsWith('#s=')) { restoring.current = false; setLoading(false); return; }
-      restoring.current = true; setLoading(true); setError(''); setShareURL('');
+      restoring.current = true; setLoading(true);
       gesture.current = null; setDraft(null); setMoving(null); stopPlayback();
       try {
-        const saved = await loadSketch(hash);
-        if (!active || version !== epoch) return;
-        await engine.current.restoreSources(saved.sources, () => active && version === epoch);
-        if (!active || version !== epoch) return;
-        dispatch({ type: 'restore', state: saved.state });
-        lastSaved.current = { state: saved.state, url: window.location.href };
-      } catch (failure) { if (active && version === epoch) report(shareError(failure)); }
+        if (isSavedLink(hash)) {
+          const saved = await loadSketch(hash);
+          if (!active || token !== navigation.current) return;
+          const name = saved.name || 'Shared sketch';
+          if (await installProject(saved, { id: crypto.randomUUID(), name, saved: false }, token))
+            lastSaved.current = { state: saved.state, name: projectName(name), url: window.location.href };
+        } else if (first) {
+          const id = await projectStore.lastProject();
+          if (!active || token !== navigation.current) return;
+          if (id) {
+            const saved = await projectStore.openProject(id);
+            await installProject(saved, saved.project, token);
+          }
+        }
+        if (active) await refreshProjects();
+      } catch (failure) { if (active && token === navigation.current) report(shareError(failure)); }
       finally {
-        if (active && version === epoch) { restoring.current = false; setLoading(false); }
+        first = false;
+        if (active && token === navigation.current) { restoring.current = false; setLoading(false); }
       }
     }
-    restore();
-    window.addEventListener('hashchange', restore);
-    return () => { active = false; epoch++; window.removeEventListener('hashchange', restore); };
+    restore(); window.addEventListener('hashchange', restore);
+    return () => { active = false; navigation.current++; window.removeEventListener('hashchange', restore); };
   }, []);
 
   useEffect(() => {
@@ -117,11 +242,14 @@ function App() {
     });
     observer.observe(svg.current);
     const onKey = event => {
+      const editing = event.target instanceof HTMLElement && (['INPUT', 'TEXTAREA'].includes(event.target.tagName) || event.target.isContentEditable);
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!restoring.current) saveProjectAction.current?.(); return; }
+      if (editing && event.key !== 'Escape') return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
         event.preventDefault(); undo();
       }
       if (event.key === 'Escape') {
-        gesture.current = null; setDraft(null); setMoving(null); stopPlayback(); setError(''); setShareURL('');
+        gesture.current = null; setDraft(null); setMoving(null); stopPlayback(); setError(''); setShareURL(''); setProjectMenu(false);
       }
       if (event.code === 'Space' && event.target === document.body) { event.preventDefault(); playSelected(); }
     };
@@ -144,7 +272,7 @@ function App() {
   }
   function pointerDown(event) {
     if (event.button !== 0 || gesture.current || restoring.current) return;
-    setShareURL('');
+    setShareURL(''); setProjectMenu(false);
     event.preventDefault();
     stopPlayback(); unlock();
     const p = point(event);
@@ -276,8 +404,17 @@ function App() {
   }
 
   const line = points => points.map(p => `${p.x * size.width},${p.y * size.height}`).join(' ');
-  const busy = loading || recording === 'requesting' || recording === 'saving' || importing;
+  const busy = loading || projectWorking || recording === 'requesting' || recording === 'saving' || importing;
   return <main className="sketchbook" aria-busy={loading || saving} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); addFiles([...event.dataTransfer.files]); }}>
+    <button className="projects-toggle" aria-label="Projects" aria-expanded={projectMenu} disabled={busy || recording !== 'idle'}
+      onClick={() => { setProjectMenu(!projectMenu); setShareURL(''); refreshProjects().catch(failure => report(failure.message)); }}><Icon name="folder" /></button>
+    {projectMenu && <ProjectPanel project={project} projects={projectList} status={localSaving ? 'Saving…' : localStatus}
+      working={projectWorking || loading || importing || recording !== 'idle' || localSaving}
+      onName={name => { setActiveProject({ ...projectRef.current, name }); setLocalStatus('Unsaved changes'); }}
+      onSave={() => saveProjectAction.current?.()} onNew={() => changeProject(null)} onOpen={changeProject}
+      onExport={exportProjectFile} onImport={() => projectFileInput.current.click()} onClose={() => setProjectMenu(false)} />}
+    <input ref={projectFileInput} type="file" accept=".sonic,application/x-sonic-sketchbook" hidden
+      onChange={event => { const file = event.target.files[0]; event.target.value = ''; importProjectFile(file); }} />
     <svg ref={svg} className={`canvas${moving ? ' moving' : ''}`} aria-label="Sound sketchbook" role="group"
       onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp}
       onPointerCancel={cancelPointer} onLostPointerCapture={cancelPointer}>
@@ -315,7 +452,7 @@ function App() {
       <span className="divider" aria-hidden="true" />
       <button aria-label="Undo" disabled={loading || !state.history.length} onClick={undo}><Icon name="undo" /></button>
       <button aria-label={playing ? 'Stop playback' : 'Replay selected path'} disabled={loading || !state.selected || recording !== 'idle'} onClick={playSelected}><Icon name={playing ? 'stop' : 'play'} /></button>
-      <button aria-label={saving ? 'Saving sketch' : 'Save and share sketch'} disabled={busy || recording !== 'idle' || saving}
+      <button aria-label={saving ? 'Sharing sketch' : 'Share sketch'} disabled={busy || recording !== 'idle' || saving}
         onClick={save}><Icon name="share" /></button>
     </div>
     {shareURL && <div className="share-panel" role="dialog" aria-label="Saved sketch link">

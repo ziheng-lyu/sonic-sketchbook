@@ -13,6 +13,7 @@ const BUCKET = {
     const value = objects.get(key);
     return value ? { size: value.length, body: new Blob([value]).stream(), json: async () => JSON.parse(new TextDecoder().decode(value)) } : null;
   },
+  async head(key) { const bytes = objects.get(key); return bytes ? { size: bytes.length } : null; },
   async delete(key) { objects.delete(key); },
 };
 http.createServer(async (incoming, outgoing) => {

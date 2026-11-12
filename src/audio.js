@@ -82,6 +82,8 @@ export class AudioEngine {
       prepared.set(id, { buffer, bytes });
     }
     if (!isCurrent()) return false;
+    for (const id of this.buffers.keys()) if (!/^seed-[0-4]$/.test(id)) this.buffers.delete(id);
+    this.sources.clear();
     for (const [id, value] of prepared) {
       this.buffers.set(id, value.buffer);
       this.sources.set(id, value.bytes.slice(0));

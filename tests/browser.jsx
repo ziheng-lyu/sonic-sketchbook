@@ -38,6 +38,10 @@ document.querySelector('#run').onclick = async () => {
   document.querySelector('#run').disabled = true;
   try {
     await frame();
+    for (let i = 0; i < 100 && document.querySelector('[aria-busy="true"]'); i++) await pause(100);
+    $('Projects').click(); await frame(); $('New project').click(); await frame();
+    for (let i = 0; i < 100 && document.querySelector('[aria-busy="true"]'); i++) await pause(100);
+    $('Close projects')?.click(); await frame();
     const canvas = document.querySelector('svg.canvas');
     // Dispatched test events have no OS pointer, so capture alone is stubbed.
     canvas.setPointerCapture = () => {};
@@ -95,7 +99,7 @@ document.querySelector('#run').onclick = async () => {
     $('Undo').click(); await frame();
     $('Undo').click(); await frame();
     check(document.querySelectorAll('.path').length === 1 && document.querySelector('[data-sound="seed-2"]').getAttribute('transform') === transform, 'Undo removes the latest path then restores the moved circle');
-    const input = document.querySelector('input[type="file"]');
+    const input = document.querySelector('input[accept^="audio/"]');
     const transfer = new DataTransfer(); transfer.items.add(wav()); input.files = transfer.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
     await pause(250); await frame();
@@ -112,9 +116,9 @@ document.querySelector('#run').onclick = async () => {
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { configurable: true, value: async constraints => {
       requested = constraints; track = destination.stream.getAudioTracks()[0]; return destination.stream;
     } });
-    $('Record sound').click(); await pause(350); await frame();
+    $('Record sound').click(); await pause(1000); await frame();
     check(!!$('Finish recording') && JSON.stringify(requested) === '{"audio":true}', 'Recording requests browser-managed audio permission and exposes Stop');
-    $('Finish recording').click(); await pause(350); await frame();
+    $('Finish recording').click(); await pause(500); await frame();
     check(document.querySelectorAll('[data-sound]').length === 6 && track.readyState === 'ended' && !!$('Record sound'), 'Real MediaRecorder audio decodes, adds a circle, and releases the stream');
     oscillator.stop(); await ctx.close();
     const recorded = document.querySelectorAll('[data-sound]')[5];
@@ -145,7 +149,7 @@ document.querySelector('#run').onclick = async () => {
     check(canvas.getBoundingClientRect().width === 320 && narrowSound.left >= 0, 'Circles at the edge remain visible after shrinking to a 320px screen');
     const soundsBeforeSave = [...document.querySelectorAll('[data-sound]')].map(node => ({ id: node.dataset.sound, transform: node.getAttribute('transform') }));
     const pathsBeforeSave = [...document.querySelectorAll('polyline.path')].map(node => ({ points: node.getAttribute('points'), selected: node.getAttribute('aria-pressed') }));
-    $('Save and share sketch').click();
+    $('Share sketch').click();
     for (let i = 0; i < 100 && !document.querySelector('[aria-label="Shareable sketch link"]'); i++) await pause(100);
     const savedURL = $('Shareable sketch link')?.value;
     check(!!savedURL && savedURL.length < 160, 'Save produces a short shareable link with the recorded sound and all marks');
@@ -167,6 +171,87 @@ document.querySelector('#run').onclick = async () => {
     check(restored.querySelector('[data-sound="seed-0"]').getAttribute('transform') !== soundsBeforeSave[0].transform, 'An opened link restores the undo history, including the last circle movement');
     check(document.querySelector('[data-sound="seed-0"]').getAttribute('transform') === soundsBeforeSave[0].transform, 'Editing the reopened snapshot leaves the original page unchanged');
     reopened.remove();
+    // Project saving is independent of sharing and preserves the workspace on switch.
+    const projectExpected = { sounds: document.querySelectorAll('[data-sound]').length, paths: document.querySelectorAll('polyline.path').length };
+    $('Projects').click(); await frame();
+    const setName = async name => {
+      const input = $('Project name');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, name);
+      input.dispatchEvent(new Event('input', { bubbles: true })); await frame();
+    };
+    const waitIdle = async () => {
+      await frame();
+      for (let i = 0; i < 600 && (document.querySelector('[aria-busy="true"]') || $('Save project')?.disabled); i++) await pause(100);
+    };
+    await setName('QA first project'); $('Save project').click(); await waitIdle();
+    check(!!$('Open project QA first project'), 'A named project is saved in the browser library');
+    check(!location.hash, 'Saving a shared sketch as a project leaves a local editing address for future refreshes');
+    $('New project').click(); await waitIdle();
+    check(document.querySelectorAll('[data-sound]').length === 5 && !document.querySelectorAll('polyline.path').length && $('Project name').value === 'Untitled sketch', 'New project opens a fresh canvas without replacing the saved project');
+    await setName('QA second project'); $('Save project').click(); await waitIdle();
+    check(!!$('Open project QA first project') && !!$('Open project QA second project'), 'Multiple projects coexist in the library');
+    $('Open project QA first project').click(); await waitIdle();
+    check(document.querySelectorAll('[data-sound]').length === projectExpected.sounds && document.querySelectorAll('polyline.path').length === projectExpected.paths, 'Opening a project restores its sounds and marks');
+    $('Projects').click(); await frame(); await setName('QA renamed project'); await pause(1300); await waitIdle();
+    check(!!$('Open project QA renamed project') && !$('Open project QA first project'), 'Changes to a saved project name are saved automatically');
+    document.querySelector('[data-sound="seed-0"]').dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }));
+    await pause(1300); await waitIdle();
+    const savedPosition = document.querySelector('[data-sound="seed-0"]').getAttribute('transform');
+    const fresh = document.createElement('iframe');
+    fresh.style.cssText = 'position:fixed;width:320px;height:640px;left:0;top:0;border:0;visibility:hidden';
+    fresh.src = new URL('../', location.href).href; document.body.append(fresh);
+    await new Promise((resolve, reject) => { fresh.onload = resolve; setTimeout(() => reject(new Error('Project reload timed out')), 15000); });
+    let freshDoc;
+    for (let i = 0; i < 100; i++) { freshDoc = fresh.contentDocument; if (freshDoc?.querySelector('main') && !freshDoc.querySelector('[aria-busy="true"]')) break; await pause(100); }
+    check(freshDoc.querySelectorAll('[data-sound]').length === projectExpected.sounds && freshDoc.querySelectorAll('polyline.path').length === projectExpected.paths && freshDoc.querySelector('[data-sound="seed-0"]').getAttribute('transform') === savedPosition, 'A fresh page automatically reopens the last project with its latest saved edits');
+    fresh.remove();
+    let exportedURL;
+    const clickAnchor = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () { if (this.download.endsWith('.sonic')) exportedURL = this.href; else clickAnchor.call(this); };
+    $('Export project file').click();
+    for (let i = 0; i < 100 && !exportedURL; i++) await pause(100);
+    HTMLAnchorElement.prototype.click = clickAnchor;
+    const exported = await (await fetch(exportedURL)).blob();
+    check(exported.size > 0, 'Export produces a portable project file');
+    $('New project').click(); await waitIdle();
+    const projectInput = document.querySelector('input[accept^=".sonic"]');
+    const projectTransfer = new DataTransfer(); projectTransfer.items.add(new File([exported], 'backup.sonic', { type: 'application/x-sonic-sketchbook' }));
+    projectInput.files = projectTransfer.files; projectInput.dispatchEvent(new Event('change', { bubbles: true })); await waitIdle();
+    check(document.querySelectorAll('[data-sound]').length === projectExpected.sounds && document.querySelectorAll('polyline.path').length === projectExpected.paths && $('Project name').value === 'QA renamed project', 'Import restores the project file with its name, sounds, and marks');
+    const realPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function () { throw new DOMException('Test quota', 'QuotaExceededError'); };
+    $('Save project').click(); await pause(150); await waitIdle();
+    check(document.querySelector('[role="alert"]')?.textContent.includes('out of project storage'), 'Storage exhaustion gives an export recovery option');
+    $('New project').click(); await pause(150); await waitIdle();
+    check(document.querySelectorAll('[data-sound]').length === projectExpected.sounds && document.querySelectorAll('polyline.path').length === projectExpected.paths, 'A failed checkpoint keeps the current workspace intact');
+    IDBObjectStore.prototype.put = realPut;
+    $('Dismiss error').click();
+    // A valid WAV with a large metadata chunk reproduces the old base64/20 MB failure.
+    const originalWav = new Uint8Array(await wav().arrayBuffer());
+    const junk = new Uint8Array(26 * 1024 * 1024);
+    for (let offset = 0; offset < junk.length; offset += 65536) crypto.getRandomValues(junk.subarray(offset, Math.min(junk.length, offset + 65536)));
+    const prefix = originalWav.slice(0, 12), chunkHeader = new Uint8Array(8);
+    chunkHeader.set(new TextEncoder().encode('JUNK')); new DataView(chunkHeader.buffer).setUint32(4, junk.length, true);
+    new DataView(prefix.buffer).setUint32(4, originalWav.length + junk.length, true);
+    const largeAudio = new File([prefix, chunkHeader, junk, originalWav.slice(12)], 'large-original.wav', { type: 'audio/wav' });
+    const largeTransfer = new DataTransfer(); largeTransfer.items.add(largeAudio); input.files = largeTransfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 300 && document.querySelectorAll('[data-sound]').length === projectExpected.sounds; i++) await pause(100);
+    check(document.querySelectorAll('[data-sound]').length === projectExpected.sounds + 1, 'An actual audio file larger than 20 MB imports successfully');
+    await waitIdle(); $('Save project').click(); await waitIdle();
+    check(!document.querySelector('[role="alert"]'), 'The large audio project saves locally without the sharing limit');
+    $('Share sketch').click();
+    for (let i = 0; i < 600 && !document.querySelector('[aria-label="Shareable sketch link"]'); i++) await pause(100);
+    const largeLink = $('Shareable sketch link')?.value;
+    check(largeLink?.includes('#s2=') && !document.querySelector('[role="alert"]'), 'A project exceeding 20 MB shares through encrypted chunks');
+    check(!location.hash, 'Sharing a saved project keeps refresh linked to the latest local project');
+    const checkFrame = document.createElement('iframe'); checkFrame.style.cssText = 'position:fixed;width:320px;height:640px;left:0;top:0;border:0;visibility:hidden';
+    const largeRoot = new URL('../', location.href); largeRoot.hash = new URL(largeLink).hash; checkFrame.src = largeRoot.href; document.body.append(checkFrame);
+    await new Promise((resolve, reject) => { checkFrame.onload = resolve; setTimeout(() => reject(new Error('Large restore timed out')), 30000); });
+    let largeDoc;
+    for (let i = 0; i < 600; i++) { largeDoc = checkFrame.contentDocument; if (largeDoc?.querySelector('main') && !largeDoc.querySelector('[aria-busy="true"]')) break; await pause(100); }
+    check(!largeDoc.querySelector('[role="alert"]') && largeDoc.querySelectorAll('[data-sound]').length === projectExpected.sounds + 1, 'The large shared project reopens with its playable original audio');
+    checkFrame.remove();
     const summary = document.createElement('strong'); summary.textContent = 'All browser checks passed.'; document.querySelector('#report').append(summary);
   } catch (error) {
     const summary = document.createElement('strong'); summary.textContent = `Browser checks stopped: ${error.message}`; document.querySelector('#report').append(summary);

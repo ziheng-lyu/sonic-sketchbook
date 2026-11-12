@@ -22,7 +22,7 @@ The included workflow tests, builds, and publishes the app when `main` changes. 
 - A released path stays visible and becomes selected. Tap an earlier line to select it. The play icon replays the selected path; it becomes a stop icon during playback.
 - Upload audio files or use the microphone icon to begin and finish a recording. Files dropped on the canvas also work.
 - Undo reverses the latest drawing, sound movement, or sound addition. A multi-file upload is one action.
-- The link icon saves a snapshot and shows its shareable link. Copy it to reopen the same sketchbook on another device. It includes sound materials, circle positions, every existing path, exact playback timing, selected path, and the undo history. Opening the link lets someone continue sketching; a later save creates a separate snapshot.
+- The link icon creates a shared snapshot and shows its shareable link. Project saving is available separately in the folder menu. Copy it to reopen the same sketchbook on another device. It includes sound materials, circle positions, every existing path, exact playback timing, selected path, and the undo history. Opening the link lets someone continue sketching; a later save creates a separate snapshot.
 - Keyboard access includes Tab, Enter/Space to audition or select, arrow keys to move a focused sound, Command/Ctrl+Z to undo, and Escape to stop playback or cancel an active gesture.
 
 The interface shows no instructions or sound labels. Accessible names are available to assistive technology.
@@ -37,20 +37,28 @@ Pointer events support mouse, pen and touch. Circle entry is tested against each
 
 Paths and positions scale with the canvas. Edge circles remain reachable on small screens. An interrupted pointer gesture is discarded; completed marks remain. Playback stops when the page is hidden. Recording tracks are released on stop, error, or teardown.
 
-Unsaved work stays in memory. The plain URL opens a fresh sketchbook. A saved link restores its snapshot after refresh or on another device. There are no accounts, analytics, or automatic uploads.
+Work in a new, unnamed sketch stays in memory until saved or until switching projects triggers a checkpoint. Saved projects update locally; shared snapshots are uploaded only when Share is chosen. There are no accounts, analytics, or automatic server uploads.
+
+## Projects
+
+The folder icon opens the project menu. Save gives the current sketch a name in this browser's project library; Open switches to an existing project; New starts a fresh canvas. Sounds, original audio files, circle positions, all marks, timing, selection, and undo history are retained. Once a project has been saved, edits are saved locally after a short pause. Before switching projects or starting a new one, the current work is saved; if saving fails, the workspace remains open.
+
+The plain app URL reopens the last saved local project. Opening a shared link creates an independent editable copy. Saving it as a project removes the share fragment from the editing address, and sharing a local project leaves that editing address unchanged, so refreshing returns to the latest local edits.
+
+Projects are stored in IndexedDB on this browser and device. They are not account-synced and browser storage can be cleared or run out. Export creates a portable `.sonic` backup; Import opens that file as a separate project. Local saving is independent from sharing and does not use the previous 20 MB sharing cap. Project files support up to 2 GB, subject to browser memory and storage availability.
 
 ## Saved links
 
-The frontend remains on GitHub Pages. The small storage service in `sharing-service/` runs separately with an R2 bucket. Saving compresses the original audio files and sketch data, then encrypts the result with a fresh AES-256-GCM key in the browser. Only encrypted bytes are uploaded. The key lives in the link's URL fragment and is never sent to the storage service. Treat the complete link as access to the sketch: anyone you give it to can open the sounds and marks.
+The frontend remains on GitHub Pages. The small storage service in `sharing-service/` runs separately with an R2 bucket. Project bundles keep original audio as raw binary bytes, avoiding base64 overhead. Sketch metadata is compressed separately. Sharing encrypts the bundle with a fresh AES-256-GCM key in independent chunks of at most 8 MB, then publishes an encrypted manifest only after every chunk is present. Only encrypted bytes are uploaded. The key lives in the link's URL fragment and is never sent to the storage service. Treat the complete link as access to the sketch: anyone you give it to can open the sounds and marks.
 
-Snapshots are immutable and do not expire automatically. Sharing a later version does not change earlier links. Current limits are 20 MB per encrypted snapshot and 32 MB of uncompressed snapshot JSON; an over-limit save leaves the current sketch untouched. Upload grants last five minutes, are single-use, and cannot overwrite or delete a saved snapshot. The API exposes no listing of saved sketches.
+Snapshots are immutable and do not expire automatically. Sharing a later version does not change earlier links. New shares support up to 250 MB per project. Each upload is bounded to 8 MB plus encryption overhead, and grants last 30 minutes. Exceeding the sharing limit leaves the project intact and still allows local saving or export. The previous single-object share format remains readable; new links use the `#s2=` format. Grants cannot overwrite or delete a completed shared snapshot. The API exposes no listing of saved sketches.
 
 For local integration testing, run `node tests/storage-server.mjs` in one terminal, then `VITE_SHARE_API=http://127.0.0.1:4177 npm run dev` in another. Test storage is in memory and disappears when that server stops. The production API URL is in `src/share.js`; it contains no credentials.
 
 ## Verification
 
-`npm test` runs 25 checks covering crossing geometry, timing, selection, undo, distinct PCM buffers, replay scheduling, decoded audio, microphone lifecycle, encrypted snapshot round trips, cross-client reopening, retained undo, upload authorization, immutable saves, and malformed links.
+`npm test` runs 31 checks covering crossing geometry, timing, selection, undo, distinct PCM buffers, replay scheduling, decoded audio, microphone lifecycle, encrypted snapshot round trips, cross-client reopening, retained undo, upload authorization, immutable saves, and malformed links.
 
-With the dev server running, open `/tests/browser.html` and click **Run browser checks**. The development-only page exercises the actual React event handlers, Web Audio buffers and clock, real WAV decoding, and real MediaRecorder encoding/decoding from a controlled audio stream. It checks touch event handling, importing, recording, permission denial, failed imports, and responsive layouts. The additional sharing checks use the local integration service and reopen a saved link in a fresh page to verify restored audio materials, marks, positions, selection, and undo. The test page is excluded from the production build. Native browser gestures also verified circle audition, dragging, multiple paths, selection, and replay controls.
+With the dev server running, open `/tests/browser.html` and click **Run browser checks**. The development-only page exercises the actual React event handlers, Web Audio buffers and clock, real WAV decoding, and real MediaRecorder encoding/decoding from a controlled audio stream. It checks touch event handling, importing, recording, permission denial, failed imports, and responsive layouts. The full browser suite covers 44 checks, including project save/open/new, automatic local saves, refresh recovery, import/export, storage-quota recovery, and an actual WAV file larger than 20 MB that is saved, shared, and reopened. The local integration service keeps test uploads off production. The automated tests also exercise a 26 MB chunked share and backward compatibility for older links. The test page is excluded from the production build. Native browser gestures also verified circle audition, dragging, multiple paths, selection, and replay controls.
 
 Microphone integration is verified with a controlled stream. Physical microphone hardware and a separate physical touch device have not been tested.

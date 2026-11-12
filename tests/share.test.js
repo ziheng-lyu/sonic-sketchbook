@@ -28,6 +28,7 @@ class MemoryBucket {
     const value = this.data.get(key);
     return value ? { size: value.length, body: new Blob([value]).stream(), json: async () => JSON.parse(new TextDecoder().decode(value)) } : null;
   }
+  async head(key) { const bytes = this.data.get(key); return bytes ? { size: bytes.length } : null; }
   async delete(key) { this.data.delete(key); }
 }
 function service(bucket) {

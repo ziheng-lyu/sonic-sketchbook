@@ -61,3 +61,21 @@ button svg { width: 20px; height: 20px; }
 .share-panel button { flex-shrink: 0; width: 36px; height: 36px; display: grid; place-items: center; padding: 8px; color: #72716b; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
 .share-panel button:hover { background: #eeede7; }
 .share-panel button:focus-visible { outline: 1.5px solid #838077; }
+
+.projects-toggle { position: absolute; z-index: 2; left: 20px; top: calc(20px + env(safe-area-inset-top, 0px)); width: 40px; height: 40px; display: grid; place-items: center; padding: 10px; border: 0; border-radius: 10px; background: transparent; color: #72716b; cursor: pointer; }
+.projects-toggle:hover { background: #eeede7; }
+.projects-toggle:focus-visible { outline: 1.5px solid #838077; }
+.projects-toggle:disabled { opacity: .4; cursor: default; }
+.project-panel { position: absolute; z-index: 3; top: calc(68px + env(safe-area-inset-top, 0px)); left: 20px; width: min(310px, calc(100% - 40px)); max-height: calc(100% - 170px); overflow: auto; padding: 14px; border: 1px solid #e4e2dc; border-radius: 12px; background: #faf9f6; font-size: 13px; color: #69665e; }
+.project-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-weight: 500; }
+.small-close { border: 0; background: none; color: #72716b; cursor: pointer; width: 28px; height: 28px; font-size: 22px; line-height: 1; }
+.project-name { display: block; width: 100%; padding: 9px 10px; font: inherit; color: #4b4a44; border: 1px solid #e4e2dc; border-radius: 8px; background: transparent; }
+.project-actions { display: flex; gap: 5px; margin-top: 10px; }
+.project-actions button { flex: 1; padding: 8px 3px; font: inherit; border: 1px solid #e4e2dc; border-radius: 7px; background: transparent; color: inherit; cursor: pointer; }
+.project-actions button:hover:enabled, .project-list button:hover:enabled { background: #eeede7; }
+.project-actions button:disabled, .project-list button:disabled { opacity: .4; cursor: default; }
+.project-status { min-height: 16px; margin: 9px 0 12px; font-size: 11px; color: #858278; }
+.project-list { border-top: 1px solid #e4e2dc; padding-top: 7px; display: flex; flex-direction: column; gap: 3px; }
+.project-list button { text-align: left; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 9px; border: 0; border-radius: 7px; font: inherit; color: inherit; background: transparent; cursor: pointer; }
+.project-list button[aria-current="true"] { background: #eeede7; color: #4b4a44; }
+.project-note { margin: 12px 0 0; font-size: 11px; line-height: 1.5; color: #858278; }

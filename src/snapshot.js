@@ -22,7 +22,7 @@ export async function readLimited(stream, limit) {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > limit) { await reader.cancel(); throw new Error('This sketch is too large to share. The limit is 20 MB.'); }
+      if (size > limit) { await reader.cancel(); throw new Error('This saved sketch is too large to open.'); }
       chunks.push(value);
     }
   } finally { reader.releaseLock(); }
@@ -32,7 +32,7 @@ export async function readLimited(stream, limit) {
   return result;
 }
 
-export function packState(state, sources) {
+export function packState(state, sources, binary = false) {
   const paths = [], pathIndex = new Map(), frames = [];
   const wanted = new Set();
   for (const frame of [...state.history, state]) {
@@ -47,12 +47,12 @@ export function packState(state, sources) {
   const assets = [...wanted].filter(id => !/^seed-[0-4]$/.test(id)).map(id => {
     const bytes = sources.get(id);
     if (!bytes) throw new Error('An audio file is missing. Please add it again before saving.');
-    return { id, data: base64url(new Uint8Array(bytes)) };
+    return binary ? { id, length: bytes.byteLength } : { id, data: base64url(new Uint8Array(bytes)) };
   });
   return { version: 1, paths, frames, assets };
 }
 
-export function unpackState(data) {
+export function unpackState(data, externalSources = null) {
   if (!data || data.version !== 1 || !Array.isArray(data.paths) || !Array.isArray(data.frames) || !Array.isArray(data.assets)) return invalid();
   if (!data.frames.length || data.frames.length > 10000 || data.paths.length > 2000 || data.assets.length > 500) return invalid();
   const knownSounds = new Set(['seed-0', 'seed-1', 'seed-2', 'seed-3', 'seed-4']);
@@ -60,9 +60,11 @@ export function unpackState(data) {
   let totalBytes = 0, totalPoints = 0;
   for (const asset of data.assets) {
     if (!idOK(asset.id) || knownSounds.has(asset.id)) return invalid();
-    const bytes = unbase64url(asset.data);
+    const external = externalSources?.get(asset.id);
+    if (externalSources && (!(external instanceof ArrayBuffer) || external.byteLength !== asset.length)) return invalid();
+    const bytes = externalSources ? new Uint8Array(external) : unbase64url(asset.data);
     totalBytes += bytes.length;
-    if (!bytes.length || totalBytes > MAX_JSON_BYTES) return invalid();
+    if (!bytes.length || totalBytes > (externalSources ? 2 * 1024 * 1024 * 1024 : MAX_JSON_BYTES)) return invalid();
     sources.set(asset.id, bytes.buffer); knownSounds.add(asset.id);
   }
   const pathIds = new Set();
