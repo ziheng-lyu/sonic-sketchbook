@@ -205,7 +205,7 @@ function App() {
       clearTimeout(autoSaveTimer.current);
       const token = ++navigation.current;
       const hash = window.location.hash;
-      restoring.current = true; setLoading(true);
+      restoring.current = true; setLoading(true); setShareURL(''); setProjectMenu(false); setError('');
       gesture.current = null; setDraft(null); setMoving(null); stopPlayback();
       try {
         if (isSavedLink(hash)) {
