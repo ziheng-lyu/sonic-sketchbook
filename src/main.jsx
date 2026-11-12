@@ -16,7 +16,6 @@ function Icon({ name }) {
     stop: <rect x="6" y="6" width="12" height="12" rx="1"/>,
     share: <><path d="m10 13 4-4"/><path d="M8 16H6a4 4 0 0 1-3-7l4-4a4 4 0 0 1 6 0M16 8h2a4 4 0 0 1 3 7l-4 4a4 4 0 0 1-6 0"/></>,
     copy: <><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3"/></>,
-    check: <path d="m5 12 4 4 10-10"/>,
     close: <path d="m6 6 12 12M6 18 18 6"/>,
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icons[name]}</svg>;
@@ -318,7 +317,7 @@ function App() {
     </div>
     {shareURL && <div className="share-panel" role="dialog" aria-label="Saved sketch link">
       <input ref={shareInput} aria-label="Shareable sketch link" readOnly value={shareURL} onFocus={event => event.target.select()} />
-      <button aria-label={copied ? 'Link copied' : 'Copy link'} onClick={() => copyLink()}><Icon name={copied ? 'check' : 'copy'} /></button>
+      <button aria-label="Copy link" onClick={() => copyLink()}><Icon name="copy" /></button>
       <button aria-label="Close saved link" onClick={() => setShareURL('')}><Icon name="close" /></button>
       <span className="sr-only" role="status">{copied ? 'Link copied. Anyone with this link can open this saved sketch.' : 'Sketch saved. Anyone with this link can open it.'}</span>
     </div>}
