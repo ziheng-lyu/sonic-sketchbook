@@ -17,7 +17,7 @@ export class ListeningGesture {
       const to = { x: b.x * this.size.width - sound.x, y: b.y * this.size.height - sound.y };
       const dx = to.x - from.x, dy = to.y - from.y, length = dx * dx + dy * dy;
       const shape = soundShape(sound), radius = soundRadius(sound), field = soundMode(sound) === 'proximity';
-      const ranges = shapeIntervals(from, to, shape, radius);
+      const ranges = shapeIntervals(from, to, shape, radius, sound.outline);
       for (const [enter, exit] of ranges) {
         let event = this.active.get(sound.id);
         const fresh = !event;
@@ -25,7 +25,7 @@ export class ListeningGesture {
           event = { soundId: sound.id, at: a.t + (b.t - a.t) * enter, ...(field ? { envelope: [] } : {}) };
           this.events.push(event); this.active.set(sound.id, event);
         }
-        const closed = exit < 1 - 1e-9 || shapeDistance(to, shape, radius) >= 1 - 1e-9;
+        const closed = exit < 1 - 1e-9 || shapeDistance(to, shape, radius, sound.outline) >= 1 - 1e-9;
         const points = [];
         if (field) {
           const steps = Math.max(1, Math.ceil(Math.sqrt(length) * (exit - enter) / 3));
@@ -35,7 +35,7 @@ export class ListeningGesture {
           fractions.sort((a, b) => a - b);
           for (const fraction of fractions) {
             const at = Math.max(0, a.t + (b.t - a.t) * fraction - event.at);
-            const gain = proximityGain(shapeDistance({ x: from.x + dx * fraction, y: from.y + dy * fraction }, shape, radius), 1);
+            const gain = proximityGain(shapeDistance({ x: from.x + dx * fraction, y: from.y + dy * fraction }, shape, radius, sound.outline), 1);
             const previous = event.envelope.at(-1);
             if (previous?.at === at && previous.gain === gain) continue;
             const point = { at, gain }; event.envelope.push(point); points.push(point);

@@ -43,7 +43,7 @@ export function crossings(a, b, sounds, size) {
   const to = { x: b.x * size.width, y: b.y * size.height };
   return sounds.flatMap(sound => {
     const center = { x: sound.x * size.width, y: sound.y * size.height };
-    return shapeIntervals({ x: from.x - center.x, y: from.y - center.y }, { x: to.x - center.x, y: to.y - center.y }, soundShape(sound), soundRadius(sound))
+    return shapeIntervals({ x: from.x - center.x, y: from.y - center.y }, { x: to.x - center.x, y: to.y - center.y }, soundShape(sound), soundRadius(sound), sound.outline)
       .filter(([enter]) => enter > 0)
       .map(([enter]) => ({ soundId: sound.id, at: a.t + (b.t - a.t) * enter, fraction: enter }));
   }).sort((left, right) => left.fraction - right.fraction);

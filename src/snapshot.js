@@ -1,4 +1,5 @@
-import { SHAPES, MODES } from './shapes.js';
+import { validOutline } from './custom-shape.js';
+import { VALID_SHAPES, MODES } from './shapes.js';
 
 export const MAX_SNAPSHOT_BYTES = 20 * 1024 * 1024;
 const MAX_JSON_BYTES = 32 * 1024 * 1024;
@@ -102,6 +103,7 @@ export function unpackState(data, externalSources = null) {
     });
     return { id: path.id, points, events, duration: path.duration };
   });
+  const outlines = new Map();
   const frames = data.frames.map(frame => {
     if (!Array.isArray(frame.sounds) || !Array.isArray(frame.paths) || !frame.sounds.length || frame.sounds.length > 505 || frame.paths.length > 2000) return invalid();
     const ids = new Set();
@@ -109,9 +111,20 @@ export function unpackState(data, externalSources = null) {
       if (!knownSounds.has(sound.id) || ids.has(sound.id) || !finite(sound.x) || !finite(sound.y) || sound.x < 0 || sound.x > 1 || sound.y < 0 || sound.y > 1) return invalid();
       if (sound.parked !== undefined && (typeof sound.parked !== 'boolean' || (sound.parked && !/^seed-[0-4]$/.test(sound.id)))) return invalid();
       if (sound.mode !== undefined && !MODES.includes(sound.mode)) return invalid();
-      if (sound.shape !== undefined && !SHAPES.includes(sound.shape)) return invalid();
+      if (sound.shape !== undefined && !VALID_SHAPES.includes(sound.shape)) return invalid();
+      let outline;
+      if (sound.outline !== undefined) {
+        if (!Array.isArray(sound.outline) || sound.outline.length > 192) return invalid();
+        const key = JSON.stringify(sound.outline);
+        if (!outlines.has(key)) {
+          if (!validOutline(sound.outline)) return invalid();
+          outlines.set(key, sound.outline.map(p => ({ x: p.x, y: p.y })));
+        }
+        outline = outlines.get(key);
+      }
+      if (sound.shape === 'custom' && !outline) return invalid();
       ids.add(sound.id);
-      return { id: sound.id, x: sound.x, y: sound.y, ...(sound.parked !== undefined ? { parked: sound.parked } : {}), ...(sound.mode !== undefined ? { mode: sound.mode } : {}), ...(sound.shape !== undefined ? { shape: sound.shape } : {}) };
+      return { id: sound.id, x: sound.x, y: sound.y, ...(sound.parked !== undefined ? { parked: sound.parked } : {}), ...(sound.mode !== undefined ? { mode: sound.mode } : {}), ...(sound.shape !== undefined ? { shape: sound.shape } : {}), ...(outline ? { outline } : {}) };
     });
     const seen = new Set();
     const marks = frame.paths.map(index => {

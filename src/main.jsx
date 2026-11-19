@@ -492,7 +492,7 @@ function App() {
         </g>;
       })}
     </svg>
-    {optionSound && <SoundOptions sound={optionSound} position={optionSound} size={size}
+    {optionSound && <SoundOptions key={optionSound.id} sound={optionSound} position={optionSound} size={size}
       onChange={change => { stopPlayback(); dispatch({ type: 'configure', id: optionSound.id, ...change }); }}
       onClose={() => setSoundMenu(null)} />}
     <div className="controls" role="toolbar" aria-label="Sketchbook controls">

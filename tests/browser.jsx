@@ -14,6 +14,10 @@ AudioEngine.prototype.replay = function (path) {
   return originalReplay.call(this, path);
 };
 await import('../src/main.jsx');
+document.querySelector('#preview').onclick = () => {
+  document.querySelector('#report').hidden = true;
+  document.querySelector('#root').style.cssText = 'width:100vw;height:100dvh';
+};
 const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const $ = label => document.querySelector(`[aria-label="${label}"]`);
@@ -367,6 +371,63 @@ document.querySelector('#run').onclick = async () => {
     const sharedShape = geometryDoc.querySelector(`[data-sound="${fieldId}"]`);
     check(sharedShape?.dataset.shape === 'organic' && sharedShape.dataset.mode === 'proximity' && !geometryDoc.querySelector('[role="alert"]'), 'A shared link restores individual geometries and playback modes in a fresh page');
     geometryFrame.remove();
+    $('Close saved link').click(); await frame();
+    document.querySelector(`[data-sound="${fieldId}"]`).dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
+    $('Draw a custom shape').click(); await frame();
+    check(!!$('Draw custom shape') && $('Apply custom shape').disabled, 'The pencil opens an empty freehand pad with Apply disabled until a shape is drawn');
+    const outlinesToDraw = [[-75,-60],[75,-60],[75,60],[30,60],[30,-15],[-30,-15],[-30,60],[-75,60],[-75,-60]];
+    const drawOutline = async (points, pointerType = 'mouse') => {
+      const pad = $('Draw custom shape'); pad.setPointerCapture = () => {}; pad.hasPointerCapture = () => false;
+      const send = async (type, p) => {
+        const box = pad.getBoundingClientRect();
+        pad.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 7, pointerType, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: box.left + (p[0] + 100) / 200 * box.width, clientY: box.top + (p[1] + 80) / 160 * box.height })); await frame();
+      };
+      await send('pointerdown', points[0]);
+      for (const point of points.slice(1)) await send('pointermove', point);
+      await send('pointerup', points.at(-1));
+    };
+    const oldMarks = document.querySelectorAll('polyline.path').length, oldCalls = calls.length;
+    await drawOutline(outlinesToDraw);
+    check(!$('Apply custom shape').disabled && !!document.querySelector('.custom-outline-preview'), 'A mouse stroke closes into a preview while retaining its concave silhouette');
+    check(document.querySelectorAll('polyline.path').length === oldMarks && calls.length === oldCalls, 'Editing a material outline does not add a listening path or trigger audio');
+    $('Apply custom shape').click(); await frame();
+    check(document.querySelector(`[data-sound="${fieldId}"]`).dataset.shape === 'custom' && document.querySelector(`[data-sound="${fieldId}"]`).dataset.mode === 'proximity' && !!document.querySelector(`[data-sound="${fieldId}"] clipPath`), 'Applying the outline changes only this sound and produces a shaded custom listening area');
+    $('Undo').click(); await frame();
+    check(document.querySelector(`[data-sound="${fieldId}"]`).dataset.shape === 'organic', 'Undo returns from a freehand outline to the prior shape');
+    $('Draw a custom shape').click(); await frame(); await drawOutline(outlinesToDraw, 'touch');
+    check(!$('Apply custom shape').disabled, 'Touch drawing also creates a valid custom outline');
+    $('Apply custom shape').click(); await frame();
+    $('Whole sound playback').click(); await frame(); $('Close sound options').click(); await frame();
+    const customSound = document.querySelector(`[data-sound="${fieldId}"]`), customMatrix = customSound.transform.baseVal.getItem(0).matrix;
+    const customBounds = canvas.getBoundingClientRect(), beforeCustomPlay = calls.filter(c => c.id === fieldId).length;
+    await draw([[(customMatrix.e - 50) / customBounds.width, customMatrix.f / customBounds.height, 0], [(customMatrix.e + 50) / customBounds.width, customMatrix.f / customBounds.height, 600]]);
+    check(calls.filter(c => c.id === fieldId).length > beforeCustomPlay && calls.filter(c => c.id === fieldId).at(-1).source.level === undefined, 'A drawn custom boundary triggers actual whole-clip audio');
+    customSound.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
+    $('Proximity playback').click(); await frame(); $('Close sound options').click(); await frame();
+    await draw([[(customMatrix.e - 50) / customBounds.width, customMatrix.f / customBounds.height, 0], [(customMatrix.e + 50) / customBounds.width, customMatrix.f / customBounds.height, 600]]);
+    $('Replay selected path').click(); await frame();
+    const customEvent = replays.at(-1).events.find(event => event.soundId === fieldId);
+    check(!!calls.filter(c => c.id === fieldId).at(-1).source.level && customEvent?.envelope.some(p => p.gain > .5), 'A custom shaded shape controls real audio gain and replays its stored volume contour');
+    $('Stop playback').click(); await frame();
+    document.querySelector(`[data-sound="${fieldId}"]`).dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
+    $('Draw a custom shape').click(); await frame(); await drawOutline([[-50,0],[0,0],[50,0]]);
+    check($('Apply custom shape').disabled, 'A line without an enclosed area cannot replace the saved shape');
+    $('Close sound options').click(); await frame();
+    check(document.querySelector(`[data-sound="${fieldId}"]`).dataset.shape === 'custom', 'Closing an unapplied edit keeps the existing freehand shape');
+    const customPath = document.querySelector(`[data-sound="${fieldId}"] .sound-field`).getAttribute('d');
+    $('Projects').click(); await frame(); $('Save project').click(); await waitIdle();
+    $('New project').click(); await waitIdle(); $('Open project ' + recoveredName).click(); await waitIdle();
+    check(document.querySelector(`[data-sound="${fieldId}"] .sound-field`)?.getAttribute('d') === customPath, 'Reopening a local project preserves the exact custom outline and proximity mode');
+    $('Share sketch').click();
+    for (let i = 0; i < 600 && !$('Shareable sketch link'); i++) await pause(100);
+    const outlineLink = $('Shareable sketch link')?.value;
+    const outlineFrame = document.createElement('iframe'); outlineFrame.style.cssText = 'position:fixed;width:320px;height:640px;left:0;top:0;border:0;visibility:hidden';
+    const outlineRoot = new URL('../', location.href); outlineRoot.hash = new URL(outlineLink).hash; outlineFrame.src = outlineRoot.href; document.body.append(outlineFrame);
+    await new Promise((resolve, reject) => { outlineFrame.onload = resolve; setTimeout(() => reject(new Error('Custom restore timed out')), 30000); });
+    let outlineDoc;
+    for (let i = 0; i < 600; i++) { outlineDoc = outlineFrame.contentDocument; if (outlineDoc?.querySelector('main') && !outlineDoc.querySelector('[aria-busy="true"]')) break; await pause(100); }
+    check(outlineDoc.querySelector(`[data-sound="${fieldId}"] .sound-field`)?.getAttribute('d') === customPath && !outlineDoc.querySelector('[role="alert"]'), 'A shared link retains the same freehand geometry in a fresh page');
+    outlineFrame.remove();
     const summary = document.createElement('strong'); summary.textContent = 'All browser checks passed.'; document.querySelector('#report').append(summary);
   } catch (error) {
     const summary = document.createElement('strong'); summary.textContent = `Browser checks stopped: ${error.message}`; document.querySelector('#report').append(summary);
