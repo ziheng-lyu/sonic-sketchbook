@@ -1,11 +1,6 @@
 import { packState, unpackState, readLimited } from './snapshot.js';
 
-// Source buffers are immutable. Reuse their Blob snapshots across local saves.
-const audioBlobs = new WeakMap();
-function audioBlob(bytes) {
-  if (!audioBlobs.has(bytes)) audioBlobs.set(bytes, new Blob([bytes]));
-  return audioBlobs.get(bytes);
-}
+import { sourceBlob } from './materials.js';
 const MAGIC = new TextEncoder().encode('SONIC02\n');
 const MAX_METADATA = 64 * 1024 * 1024;
 const MAX_PROJECT = 2 * 1024 * 1024 * 1024;
@@ -19,7 +14,7 @@ export async function createProjectBundle(state, sources, name = 'Untitled sketc
   const metadata = await readLimited(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip')), MAX_METADATA);
   const header = new Uint8Array(12); header.set(MAGIC);
   new DataView(header.buffer).setUint32(8, metadata.length, true);
-  const parts = [header, metadata, ...layout.assets.map(asset => audioBlob(sources.get(asset.id)))];
+  const parts = [header, metadata, ...layout.assets.map(asset => sourceBlob(sources.get(asset.id)))];
   const blob = new Blob(parts, { type: 'application/x-sonic-sketchbook' });
   if (blob.size > MAX_PROJECT) throw new Error('This project exceeds the 2 GB project-file limit.');
   return blob;

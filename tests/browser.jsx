@@ -217,6 +217,21 @@ document.querySelector('#run').onclick = async () => {
     HTMLAnchorElement.prototype.click = clickAnchor;
     const exported = await (await fetch(exportedURL)).blob();
     check(exported.size > 0, 'Export produces a portable project file');
+    const legacyStore = await import('../src/projects.js'), legacyId = 'legacy-qa-' + crypto.randomUUID();
+    const legacyDb = await new Promise((resolve, reject) => { const request = indexedDB.open('sonic-sketchbook-projects', 1); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    await new Promise((resolve, reject) => {
+      const tx = legacyDb.transaction(['projects', 'contents'], 'readwrite');
+      tx.objectStore('projects').put({ id: legacyId, name: 'Legacy compatibility fixture', updatedAt: Date.now() });
+      tx.objectStore('contents').put({ id: legacyId, blob: exported });
+      tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+    });
+    const legacyProject = await legacyStore.openProject(legacyId);
+    check(legacyProject.state.sounds.length === projectExpected.sounds && legacyProject.state.paths.length === projectExpected.paths && legacyProject.sources.size > 0, 'Existing bundled IndexedDB projects open with their audio and marks');
+    await legacyStore.saveProject(legacyProject.project, legacyProject.state, legacyProject.sources);
+    const upgradedRecord = await new Promise(resolve => { const request = legacyDb.transaction('contents').objectStore('contents').get(legacyId); request.onsuccess = () => resolve(request.result); });
+    const upgradedProject = await legacyStore.openProject(legacyId);
+    check(upgradedRecord.version === 3 && JSON.stringify(upgradedProject.state) === JSON.stringify(legacyProject.state) && upgradedProject.sources.size === legacyProject.sources.size, 'Saving an older browser project upgrades storage and preserves the complete history');
+    await legacyStore.deleteProject(legacyId); legacyDb.close();
     $('New project').click(); await waitIdle();
     const projectInput = document.querySelector('input[accept^=".sonic"]');
     const projectTransfer = new DataTransfer(); projectTransfer.items.add(new File([exported], 'backup.sonic', { type: 'application/x-sonic-sketchbook' }));
@@ -491,6 +506,36 @@ document.querySelector('#run').onclick = async () => {
     $('Projects').click(); await frame(); $('Save project').click(); await waitIdle();
     $('New project').click(); await waitIdle(); $('Open project ' + recoveredName).click(); await waitIdle();
     check(document.querySelector(`[data-sound="${fieldId}"]`).dataset.scale === '20', 'A maximum-size freehand sound reopens from the local project');
+    // Exercise dense input on the actual maximum-size custom SVG material.
+    const dragNode = document.querySelector(`[data-sound="${fieldId}"]`);
+    const dragStart = dragNode.getAttribute('transform'), dragShape = dragNode.querySelector('.sound-field').getAttribute('d');
+    const dragMatrix = dragNode.transform.baseVal.getItem(0).matrix;
+    const dragBounds = canvas.getBoundingClientRect(), originalRect = canvas.getBoundingClientRect.bind(canvas);
+    let dragReads = 0;
+    canvas.getBoundingClientRect = () => { dragReads++; return originalRect(); };
+    const densePointer = (type, dx, dy, target = canvas) => {
+      const event = new PointerEvent(type, { bubbles: true, pointerId: 1, pointerType: 'touch', isPrimary: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: dragBounds.left + dragMatrix.e + dx, clientY: dragBounds.top + dragMatrix.f + dy });
+      target.dispatchEvent(event);
+    };
+    densePointer('pointerdown', 0, 0, dragNode.querySelector('.sound-target')); await frame();
+    for (let i = 1; i <= 300; i++) densePointer('pointermove', -i / 10, 10);
+    check(dragNode.style.transform === '' && dragNode.getAttribute('transform') === dragStart, 'Dense drag input waits for one paint without committing intermediate positions');
+    await frame();
+    check(dragNode.style.transform.includes('translate3d') && dragNode.querySelector('.sound-field').getAttribute('d') === dragShape, 'A large freehand sound previews its latest position without rebuilding the outline');
+    densePointer('pointerup', -30, 10); await frame();
+    check(dragReads === 1 && dragNode.style.transform === '' && dragNode.style.willChange === '' && dragNode.getAttribute('transform') !== dragStart, 'A complete dense touch drag reads layout once and commits its final position');
+    $('Undo').click(); await frame();
+    check(dragNode.getAttribute('transform') === dragStart, 'One Undo restores the entire dense drag');
+    for (const cancelType of ['pointercancel', 'escape', 'lostpointercapture']) {
+      densePointer('pointerdown', 0, 0, dragNode.querySelector('.sound-target')); await frame();
+      densePointer('pointermove', -25, 12); await frame();
+      densePointer('pointermove', -45, 16); // Cancel with a frame still pending.
+      if (cancelType === 'escape') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      else densePointer(cancelType, -45, 16);
+      await frame(); densePointer('pointerup', -45, 16); await frame();
+      check(dragNode.getAttribute('transform') === dragStart && dragNode.style.transform === '' && !canvas.classList.contains('moving'), `Canceling via ${cancelType} restores the sound and discards pending movement`);
+    }
+    canvas.getBoundingClientRect = originalRect;
     $('Share sketch').click();
     for (let i = 0; i < 600 && !$('Shareable sketch link'); i++) await pause(100);
     const giantLink = $('Shareable sketch link')?.value;

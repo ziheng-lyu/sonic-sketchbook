@@ -1,4 +1,4 @@
-import React, { useId, useRef, useState } from 'react';
+import React, { memo, useId, useRef, useState } from 'react';
 import { SizeControl } from './SizeControl.jsx';
 import { ShapeEditor } from './ShapeEditor.jsx';
 import { customInsetPath, customGeometry } from './custom-shape.js';
@@ -7,7 +7,7 @@ import { SHAPES, shapePath, soundMode, soundShape, soundRadius, soundScale } fro
 export function ShapeMark({ shape = 'circle', radius = 1, outline, ...props }) {
   return <path fillRule="evenodd" d={shapePath(shape, radius, outline)} {...props} />;
 }
-export function SoundMark({ sound }) {
+export const SoundMark = memo(function SoundMark({ sound }) {
   const shape = soundShape(sound), field = soundMode(sound) === 'proximity';
   const clip = useId(), scale = soundScale(sound);
   if (shape === 'custom') {
@@ -27,7 +27,9 @@ export function SoundMark({ sound }) {
     <ShapeMark shape={shape} radius={23 * scale} className="sound-inner" />
     <ShapeMark shape={shape} radius={Math.min(12, 8 * scale)} className="sound-mark" />
   </> : <><circle r={Math.min(12, 10 * scale)} className="sound-target" /><ShapeMark shape={shape} radius={soundRadius(sound)} className="sound-plain" /></>;
-}
+}, (before, after) => before.sound.id === after.sound.id && soundShape(before.sound) === soundShape(after.sound)
+  && soundMode(before.sound) === soundMode(after.sound) && soundScale(before.sound) === soundScale(after.sound)
+  && before.sound.outline === after.sound.outline);
 export function SoundOptions({ sound, position, size, onChange, onSizePreview, onDelete, onClose }) {
   const [editing, setEditing] = useState(false);
   const resizeAnchor = useRef(null);

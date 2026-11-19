@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { frameDrag } from './frame-drag.js';
 import { AudioEngine } from './audio.js';
 import { Microphone } from './recorder.js';
 import { keepOnCanvas, nearestPath, soundPosition, soundPadding } from './geometry.js';
@@ -56,10 +57,10 @@ function App() {
   const engine = useRef(null), microphone = useRef(null), playTimer = useRef(null);
   const playbackEpoch = useRef(0), mounted = useRef(true), current = useRef(state);
   current.current = state;
-  const viewSounds = state.sounds.map(sound => {
+  const viewSounds = useMemo(() => state.sounds.map(sound => {
     const visible = sizePreview?.id === sound.id ? { ...sound, scale: sizePreview.scale } : sound;
     return { ...visible, ...soundPosition(visible, size) };
-  });
+  }), [state.sounds, sizePreview, size]);
   const optionSound = viewSounds.find(sound => sound.id === soundMenu);
   if (!engine.current) engine.current = new AudioEngine();
 
@@ -111,7 +112,7 @@ function App() {
     if (token !== navigation.current) return false;
     const ready = await engine.current.restoreSources(saved.sources, () => mounted.current && token === navigation.current);
     if (!ready || token !== navigation.current) return false;
-    gesture.current = null; setDraft(null); setMoving(null); stopPlayback();
+    cancelGesture(); stopPlayback();
     current.current = saved.state; dispatch({ type: 'restore', state: saved.state });
     setActiveProject(metadata);
     savedProjectRef.current = metadata.saved ? { state: saved.state, name: projectName(metadata.name) } : null;
@@ -125,7 +126,7 @@ function App() {
     clearTimeout(autoSaveTimer.current);
     const token = ++navigation.current;
     restoring.current = true; setProjectWorking(true); setLoading(true);
-    gesture.current = null; setDraft(null); setMoving(null); stopPlayback();
+    cancelGesture(); stopPlayback();
     try {
       await checkpoint();
       const saved = id ? await projectStore.openProject(id) : { state: initialState(), sources: new Map() };
@@ -184,7 +185,7 @@ function App() {
     clearTimeout(autoSaveTimer.current);
     const token = ++navigation.current;
     restoring.current = true; setLoading(true); setProjectWorking(true);
-    gesture.current = null; setDraft(null); setMoving(null); stopPlayback();
+    cancelGesture(); stopPlayback();
     try {
       const saved = await openProjectBundle(file);
       await checkpoint();
@@ -219,13 +220,13 @@ function App() {
   }
   function undo() {
     if (restoring.current) return;
-    gesture.current = null; setDraft(null); setMoving(null);
+    cancelGesture();
     stopPlayback(); dispatch({ type: 'undo' });
   }
 
   function editCanvas(action) {
     if (restoring.current) return;
-    gesture.current = null; setDraft(null); setMoving(null); setSoundMenu(null); setSizePreview(null);
+    cancelGesture(); setSoundMenu(null); setSizePreview(null);
     stopPlayback(); dispatch(action);
   }
 
@@ -263,7 +264,7 @@ function App() {
       const token = ++navigation.current;
       const hash = window.location.hash;
       restoring.current = true; setLoading(true); setShareURL(''); setProjectMenu(false); setError('');
-      gesture.current = null; setDraft(null); setMoving(null); stopPlayback();
+      cancelGesture(); stopPlayback();
       try {
         if (isSavedLink(hash)) {
           const saved = await loadSketch(hash);
@@ -294,8 +295,7 @@ function App() {
     const observer = new ResizeObserver(entries => {
       const { width, height } = entries[0].contentRect;
       if (gesture.current) stopPlayback();
-      gesture.current = null;
-      setDraft(null); setMoving(null);
+      cancelGesture();
       setSize({ width: Math.max(1, width), height: Math.max(1, height) });
     });
     observer.observe(svg.current);
@@ -307,12 +307,12 @@ function App() {
         event.preventDefault(); undo();
       }
       if (event.key === 'Escape') {
-        gesture.current = null; setDraft(null); setMoving(null); stopPlayback(); setError(''); setShareURL(''); setProjectMenu(false); setSoundMenu(null); setSizePreview(null);
+        cancelGesture(); stopPlayback(); setError(''); setShareURL(''); setProjectMenu(false); setSoundMenu(null); setSizePreview(null);
       }
       if (event.code === 'Space' && event.target === document.body) { event.preventDefault(); playSelected(); }
     };
     const onVisibility = () => {
-      if (document.hidden) { stopPlayback(); gesture.current = null; setDraft(null); setMoving(null); }
+      if (document.hidden) { stopPlayback(); cancelGesture(); }
     };
     window.addEventListener('keydown', onKey);
     document.addEventListener('visibilitychange', onVisibility);
@@ -320,13 +320,24 @@ function App() {
       mounted.current = false;
       observer.disconnect(); window.removeEventListener('keydown', onKey);
       document.removeEventListener('visibilitychange', onVisibility);
+      gesture.current?.preview?.cancel(); gesture.current = null;
       clearTimeout(autoSaveTimer.current); cancelAnimationFrame(draftFrame.current);
       clearTimeout(playTimer.current); engine.current.dispose(); microphone.current?.dispose();
     };
   }, []);
 
-  function point(event, started = event.timeStamp) {
-    const rect = svg.current.getBoundingClientRect();
+  function cancelGesture() {
+    const active = gesture.current; gesture.current = null;
+    if (active?.preview) {
+      active.preview.cancel();
+      active.node.setAttribute('transform', `translate(${active.sound.x * active.size.width} ${active.sound.y * active.size.height})`);
+      active.node.style.removeProperty('transform'); active.node.style.removeProperty('will-change');
+    }
+    cancelAnimationFrame(draftFrame.current); draftFrame.current = null;
+    setDraft(null); setMoving(null);
+    if (active && svg.current?.hasPointerCapture(active.pointerId)) svg.current.releasePointerCapture(active.pointerId);
+  }
+  function point(event, started = event.timeStamp, rect = svg.current.getBoundingClientRect()) {
     return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)), t: Math.max(0, event.timeStamp - started) };
   }
   function pointerDown(event) {
@@ -335,26 +346,35 @@ function App() {
     setShareURL(''); setProjectMenu(false); setSoundMenu(null); setSizePreview(null);
     event.preventDefault();
     stopPlayback(); unlock();
-    const p = point(event);
+    const rect = svg.current.getBoundingClientRect();
+    const p = point(event, event.timeStamp, rect);
     const id = event.target.closest('[data-sound]')?.dataset.sound;
     const sound = viewSounds.find(item => item.id === id);
-    const base = { pointerId: event.pointerId, started: event.timeStamp, start: p, moved: false, size: { ...size } };
+    const base = { pointerId: event.pointerId, started: event.timeStamp, start: p, moved: false, rect, size: { ...size } };
     gesture.current = sound
       ? { ...base, type: 'move', sound, position: { x: sound.x, y: sound.y } }
       : { ...base, type: 'draw', points: [p], listening: new ListeningGesture(viewSounds, size) };
     svg.current.setPointerCapture(event.pointerId);
-    if (sound) setMoving({ id: sound.id, x: sound.x, y: sound.y });
+    if (sound) {
+      const active = gesture.current;
+      active.node = event.target.closest('[data-sound]');
+      active.node.style.willChange = 'transform';
+      active.preview = frameDrag(position => {
+        active.node.style.transform = `translate3d(${position.x * active.size.width}px,${position.y * active.size.height}px,0)`;
+      });
+      setMoving({ id: sound.id, x: sound.x, y: sound.y });
+    }
   }
   function sample(event) {
     const g = gesture.current;
     if (!g || event.pointerId !== g.pointerId) return;
-    const p = point(event, g.started);
+    const p = point(event, g.started, g.rect);
     const travel = Math.hypot((p.x - g.start.x) * g.size.width, (p.y - g.start.y) * g.size.height);
     if (travel > 3) g.moved = true;
     if (g.type === 'move') {
       if (!g.moved) return;
       g.position = keepOnCanvas({ x: g.sound.x + p.x - g.start.x, y: g.sound.y + p.y - g.start.y }, g.size, soundPadding(g.sound));
-      setMoving({ id: g.sound.id, ...g.position });
+      g.preview.update(g.position);
     } else {
       const previous = g.points.at(-1);
       if (p.x === previous.x && p.y === previous.y && p.t === previous.t) return;
@@ -368,14 +388,20 @@ function App() {
   }
   function pointerMove(event) {
     const samples = event.nativeEvent.getCoalescedEvents?.() ?? [];
-    if (samples.length) samples.forEach(sample);
+    if (gesture.current?.type === 'move') sample(samples.at(-1) || event);
+    else if (samples.length) samples.forEach(sample);
     else sample(event);
   }
   function pointerUp(event) {
     const g = gesture.current;
     if (!g || event.pointerId !== g.pointerId) return;
     sample(event);
-    gesture.current = null; setDraft(null); setMoving(null);
+    if (g.preview) {
+      g.preview.finish(g.position);
+      g.node.setAttribute('transform', `translate(${g.position.x * g.size.width} ${g.position.y * g.size.height})`);
+      g.node.style.removeProperty('transform'); g.node.style.removeProperty('will-change');
+    }
+    gesture.current = null; cancelAnimationFrame(draftFrame.current); draftFrame.current = null; setDraft(null); setMoving(null);
     if (svg.current.hasPointerCapture(event.pointerId)) svg.current.releasePointerCapture(event.pointerId);
     if (g.type === 'move') {
       if (g.moved) dispatch({ type: 'move', id: g.sound.id, position: g.position });
@@ -390,7 +416,7 @@ function App() {
     }
   }
   function cancelPointer(event) {
-    if (gesture.current?.pointerId === event.pointerId) { gesture.current = null; setDraft(null); setMoving(null); stopPlayback(); }
+    if (gesture.current?.pointerId === event.pointerId) { cancelGesture(); stopPlayback(); }
   }
 
   async function playSelected() {
@@ -487,7 +513,8 @@ function App() {
         opacity={Math.max(.3, .55 + .3 * index / Math.max(1, state.paths.length - 1))} />)}
       {draft && <polyline points={line(draft)} className="path selected draft" />}
       {viewSounds.map((sound, index) => {
-        const position = moving?.id === sound.id ? moving : sound;
+        const active = gesture.current;
+        const position = active?.type === 'move' && active.sound.id === sound.id ? active.position : sound;
         return <g key={sound.id} data-sound={sound.id} data-mode={soundMode(sound)} data-shape={soundShape(sound)} data-scale={soundScale(sound)} className="sound" transform={`translate(${position.x * size.width} ${position.y * size.height})`}
           role="button" tabIndex="0" aria-label={`Play sound ${index + 1}`}
           onKeyDown={event => {

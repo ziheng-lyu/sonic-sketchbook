@@ -1,4 +1,5 @@
-import { createProjectBundle, openProjectBundle, projectName } from './bundle.js';
+import { projectName } from './bundle.js';
+import { prepareProjectRecord, readProjectRecord } from './project-record.js';
 
 let connection;
 function database() {
@@ -49,11 +50,11 @@ export async function lastProject() {
 }
 export async function saveProject(project, state, sources) {
   const name = projectName(project.name);
-  const blob = await createProjectBundle(state, sources, name);
+  const content = prepareProjectRecord(project.id, state, sources);
   const record = { id: project.id, name, updatedAt: Date.now() };
   await transaction(['projects', 'contents', 'settings'], 'readwrite', tx => {
     tx.objectStore('projects').put(record);
-    tx.objectStore('contents').put({ id: project.id, blob });
+    tx.objectStore('contents').put(content);
     tx.objectStore('settings').put(project.id, 'last');
   });
   return { ...record, saved: true };
@@ -61,13 +62,13 @@ export async function saveProject(project, state, sources) {
 export async function openProject(id) {
   const result = await transaction(['projects', 'contents'], 'readonly', (tx, done) => {
     const details = tx.objectStore('projects').get(id), content = tx.objectStore('contents').get(id);
-    let metadata, blob, complete = 0;
-    const finish = () => { if (++complete === 2) done({ metadata, blob }); };
+    let metadata, contents, complete = 0;
+    const finish = () => { if (++complete === 2) done({ metadata, contents }); };
     details.onsuccess = () => { metadata = details.result; finish(); };
-    content.onsuccess = () => { blob = content.result?.blob; finish(); };
+    content.onsuccess = () => { contents = content.result; finish(); };
   });
-  if (!result.metadata || !result.blob) throw new Error('This project could not be found in this browser.');
-  const loaded = await openProjectBundle(result.blob);
+  if (!result.metadata || !result.contents) throw new Error('This project could not be found in this browser.');
+  const loaded = await readProjectRecord(result.contents);
   return { ...loaded, project: { ...result.metadata, saved: true } };
 }
 // Keep the deleted bundle as a Blob for one-step recovery without decoding audio.
