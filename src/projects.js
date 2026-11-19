@@ -70,6 +70,25 @@ export async function openProject(id) {
   const loaded = await openProjectBundle(result.blob);
   return { ...loaded, project: { ...result.metadata, saved: true } };
 }
+// Keep the deleted bundle as a Blob for one-step recovery without decoding audio.
+export async function deleteProject(id) {
+  return transaction(['projects', 'contents', 'settings'], 'readwrite', (tx, done) => {
+    const details = tx.objectStore('projects').get(id), content = tx.objectStore('contents').get(id);
+    let metadata, contents, complete = 0;
+    const finish = () => { if (++complete === 2) done(metadata && contents ? { metadata, contents } : null); };
+    details.onsuccess = () => { metadata = details.result; finish(); };
+    content.onsuccess = () => { contents = content.result; finish(); };
+    tx.objectStore('projects').delete(id); tx.objectStore('contents').delete(id);
+    const last = tx.objectStore('settings').get('last');
+    last.onsuccess = () => { if (last.result === id) tx.objectStore('settings').delete('last'); };
+  });
+}
+export async function restoreProject(record) {
+  await transaction(['projects', 'contents'], 'readwrite', tx => {
+    tx.objectStore('projects').put(record.metadata);
+    tx.objectStore('contents').put(record.contents);
+  });
+}
 export async function rememberProject(id) {
   await transaction(['settings'], 'readwrite', tx => {
     if (id) tx.objectStore('settings').put(id, 'last'); else tx.objectStore('settings').delete('last');

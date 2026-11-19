@@ -86,7 +86,7 @@ export class AudioEngine {
     this.sources.clear();
     for (const [id, value] of prepared) {
       this.buffers.set(id, value.buffer);
-      this.sources.set(id, value.bytes.slice(0));
+      this.sources.set(id, value.bytes);
     }
     return true;
   }

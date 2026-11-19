@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AudioEngine } from './audio.js';
 import { Microphone } from './recorder.js';
@@ -24,6 +24,13 @@ function Icon({ name }) {
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icons[name]}</svg>;
 }
+
+const StoredPath = memo(function StoredPath({ path, size, selected, opacity, onSelect, index }) {
+  const points = useMemo(() => path.points.map(p => `${p.x * size.width},${p.y * size.height}`).join(' '), [path, size]);
+  return <polyline points={points} className={`path${selected ? ' selected' : ''}`}
+    style={{ '--age-opacity': opacity }} role="button" tabIndex="0" aria-label={`Select path ${index + 1}`} aria-pressed={selected}
+    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect({ type: 'select', id: path.id }); } }} />;
+});
 
 function App() {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
@@ -53,7 +60,8 @@ function App() {
   const [localSaving, setLocalSaving] = useState(false);
   const [localStatus, setLocalStatus] = useState('Not saved yet');
   const projectRef = useRef(project), savedProjectRef = useRef(null), projectQueue = useRef(Promise.resolve());
-  const autoSaveTimer = useRef(null);
+  const autoSaveTimer = useRef(null), draftFrame = useRef(null);
+  const [deletedProject, setDeletedProject] = useState(null);
   const projectFileInput = useRef(null), saveProjectAction = useRef(null), navigation = useRef(0);
   projectRef.current = project;
 
@@ -120,6 +128,35 @@ function App() {
     } catch (failure) { report(failure.message); }
     finally { if (token === navigation.current) { restoring.current = false; setProjectWorking(false); setLoading(false); } }
   }
+  async function deleteSavedProject(id) {
+    if (projectWorking || localSaving || restoring.current || importing || recording !== 'idle') return;
+    clearTimeout(autoSaveTimer.current);
+    restoring.current = true; setProjectWorking(true);
+    try {
+      await projectQueue.current.catch(() => {});
+      const active = id === projectRef.current.id;
+      const recovery = active ? {
+        metadata: { id, name: projectName(projectRef.current.name), updatedAt: Date.now() },
+        contents: { id, blob: await createProjectBundle(current.current, engine.current.sources, projectRef.current.name) },
+      } : null;
+      const removed = await projectStore.deleteProject(id);
+      if (removed) setDeletedProject(recovery || removed);
+      if (id === projectRef.current.id) {
+        const token = ++navigation.current;
+        await installProject({ state: initialState(), sources: new Map() }, { id: crypto.randomUUID(), name: 'Untitled sketch', saved: false }, token);
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      await refreshProjects();
+    } catch (failure) { report(failure.message); }
+    finally { restoring.current = false; setProjectWorking(false); }
+  }
+  async function undoProjectDeletion() {
+    if (!deletedProject || projectWorking || localSaving || restoring.current) return;
+    setProjectWorking(true);
+    try { await projectStore.restoreProject(deletedProject); await refreshProjects(); setDeletedProject(null); }
+    catch (failure) { report(failure.message); }
+    finally { setProjectWorking(false); }
+  }
   async function exportProjectFile() {
     if (projectWorking || restoring.current || recording !== 'idle' || importing) return;
     setProjectWorking(true);
@@ -152,7 +189,11 @@ function App() {
     if (!project.saved || loading || projectWorking || importing || recording !== 'idle') return;
     if (savedProjectRef.current?.state === state && savedProjectRef.current.name === projectName(project.name)) return;
     setLocalStatus('Unsaved changes');
-    autoSaveTimer.current = setTimeout(() => persistCurrent().catch(failure => report(failure.message)), 800);
+    const saveWhenIdle = () => {
+      if (gesture.current) { autoSaveTimer.current = setTimeout(saveWhenIdle, 800); return; }
+      persistCurrent().catch(failure => report(failure.message));
+    };
+    autoSaveTimer.current = setTimeout(saveWhenIdle, 800);
     return () => clearTimeout(autoSaveTimer.current);
   }, [state, project.name, project.saved, project.id, loading, projectWorking, importing, recording]);
 
@@ -262,6 +303,7 @@ function App() {
       mounted.current = false;
       observer.disconnect(); window.removeEventListener('keydown', onKey);
       document.removeEventListener('visibilitychange', onVisibility);
+      clearTimeout(autoSaveTimer.current); cancelAnimationFrame(draftFrame.current);
       clearTimeout(playTimer.current); engine.current.dispose(); microphone.current?.dispose();
     };
   }, []);
@@ -302,7 +344,10 @@ function App() {
       g.events.push(...entered.map(({ soundId, at }) => ({ soundId, at })));
       entered.forEach(entry => audition(entry.soundId));
       g.points.push(p);
-      if (g.moved) setDraft([...g.points]);
+      if (g.moved && draftFrame.current === null) draftFrame.current = requestAnimationFrame(() => {
+        draftFrame.current = null;
+        if (gesture.current === g) setDraft([...g.points]);
+      });
     }
   }
   function pointerMove(event) {
@@ -412,17 +457,16 @@ function App() {
       working={projectWorking || loading || importing || recording !== 'idle' || localSaving}
       onName={name => { setActiveProject({ ...projectRef.current, name }); setLocalStatus('Unsaved changes'); }}
       onSave={() => saveProjectAction.current?.()} onNew={() => changeProject(null)} onOpen={changeProject}
+      onDelete={deleteSavedProject} deleted={deletedProject} onRestore={undoProjectDeletion}
       onExport={exportProjectFile} onImport={() => projectFileInput.current.click()} onClose={() => setProjectMenu(false)} />}
     <input ref={projectFileInput} type="file" accept=".sonic,application/x-sonic-sketchbook" hidden
       onChange={event => { const file = event.target.files[0]; event.target.value = ''; importProjectFile(file); }} />
     <svg ref={svg} className={`canvas${moving ? ' moving' : ''}`} aria-label="Sound sketchbook" role="group"
       onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp}
       onPointerCancel={cancelPointer} onLostPointerCapture={cancelPointer}>
-      {state.paths.map((path, index) => <polyline key={path.id} points={line(path.points)}
-        className={`path${path.id === state.selected && !draft ? ' selected' : ''}`}
-        style={{ '--age-opacity': Math.max(.3, .55 + .3 * index / Math.max(1, state.paths.length - 1)) }}
-        role="button" tabIndex="0" aria-label={`Select path ${index + 1}`} aria-pressed={path.id === state.selected}
-        onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); dispatch({ type: 'select', id: path.id }); } }} />)}
+      {state.paths.map((path, index) => <StoredPath key={path.id} path={path} size={size}
+        selected={path.id === state.selected && !draft} index={index} onSelect={dispatch}
+        opacity={Math.max(.3, .55 + .3 * index / Math.max(1, state.paths.length - 1))} />)}
       {draft && <polyline points={line(draft)} className="path selected draft" />}
       {viewSounds.map((sound, index) => {
         const position = moving?.id === sound.id ? moving : sound;

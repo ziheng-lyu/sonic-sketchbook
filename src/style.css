@@ -79,3 +79,10 @@ button svg { width: 20px; height: 20px; }
 .project-list button { text-align: left; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 9px; border: 0; border-radius: 7px; font: inherit; color: inherit; background: transparent; cursor: pointer; }
 .project-list button[aria-current="true"] { background: #eeede7; color: #4b4a44; }
 .project-note { margin: 12px 0 0; font-size: 11px; line-height: 1.5; color: #858278; }
+
+.project-row { display: flex; align-items: center; gap: 3px; }
+.project-row .project-open { flex: 1; min-width: 0; }
+.project-row .project-delete { display: grid; place-items: center; width: 36px; height: 36px; padding: 8px; color: #858278; }
+.project-recovery { display: flex; align-items: center; gap: 10px; margin: 12px 0 0; font-size: 12px; }
+.project-recovery span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.project-recovery button { border: 0; background: transparent; color: inherit; padding: 7px; font: inherit; text-decoration: underline; cursor: pointer; }

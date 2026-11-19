@@ -252,6 +252,52 @@ document.querySelector('#run').onclick = async () => {
     for (let i = 0; i < 600; i++) { largeDoc = checkFrame.contentDocument; if (largeDoc?.querySelector('main') && !largeDoc.querySelector('[aria-busy="true"]')) break; await pause(100); }
     check(!largeDoc.querySelector('[role="alert"]') && largeDoc.querySelectorAll('[data-sound]').length === projectExpected.sounds + 1, 'The large shared project reopens with its playable original audio');
     checkFrame.remove();
+    $('Close saved link').click(); await frame();
+    if (!$('Project name')) { $('Projects').click(); await frame(); }
+    const deletionName = 'QA deletion ' + crypto.randomUUID().slice(0, 8), updatedName = deletionName + ' updated', recoveredName = deletionName + ' recovered';
+    await setName(deletionName); await pause(1300); await waitIdle();
+    const loadedCount = document.querySelectorAll('[data-sound]').length;
+    const marksCount = document.querySelectorAll('polyline.path').length;
+    // A pending autosave must wait for a gesture, even if the pointer pauses.
+    let contentWrites = 0;
+    IDBObjectStore.prototype.put = function (...args) { if (this.name === 'contents') contentWrites++; return realPut.apply(this, args); };
+    await setName(updatedName);
+    await pointer('pointerdown', .07, .95, 0);
+    await pointer('pointermove', .4, .95, 500);
+    await pause(1200);
+    check(contentWrites === 0, 'Autosave does not rebuild a large project during an active gesture');
+    await pointer('pointerup', .7, .95, 1600); await pause(1800); await waitIdle();
+    check(contentWrites > 0, 'Deferred autosave resumes after the gesture finishes');
+    IDBObjectStore.prototype.put = realPut;
+    $('Projects').click(); await frame();
+    const inactive = $('Delete project QA renamed project');
+    check(!!inactive, 'Every saved project exposes an accessible trash control');
+    const inactiveCount = document.querySelectorAll('[aria-label="Open project QA renamed project"]').length;
+    inactive.click(); await waitIdle();
+    check(document.querySelectorAll('[aria-label="Open project QA renamed project"]').length === inactiveCount - 1 && document.querySelectorAll('[data-sound]').length === loadedCount && document.querySelectorAll('polyline.path').length === marksCount + 1, 'Deleting another project leaves the active sounds and marks intact');
+    $('Undo project deletion').click(); await waitIdle();
+    check(document.querySelectorAll('[aria-label="Open project QA renamed project"]').length === inactiveCount, 'Undo restores the deleted project to the library');
+    const activeId = document.querySelector('.project-open[aria-current="true"]').closest('.project-row');
+    const activeLabel = activeId.querySelector('.project-delete').getAttribute('aria-label');
+    const realDelete = IDBObjectStore.prototype.delete;
+    IDBObjectStore.prototype.delete = function () { throw new DOMException('Test failure', 'UnknownError'); };
+    activeId.querySelector('.project-delete').click(); await waitIdle();
+    check(!!$(activeLabel) && document.querySelectorAll('[data-sound]').length === loadedCount && !!document.querySelector('[role="alert"]'), 'A failed deletion keeps the project and its workspace intact');
+    IDBObjectStore.prototype.delete = realDelete; $('Dismiss error').click();
+    await setName(recoveredName);
+    $(activeLabel).click(); await waitIdle();
+    check(!$(activeLabel) && document.querySelectorAll('[data-sound]').length === 5 && document.querySelectorAll('polyline.path').length === 0 && $('Project name').value === 'Untitled sketch', 'Deleting the open project creates an empty new sketch without recreating its saved entry');
+    const store = await import('../src/projects.js');
+    const db = await new Promise((resolve, reject) => { const req = indexedDB.open('sonic-sketchbook-projects', 1); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+    const entries = await new Promise(resolve => { const tx = db.transaction(['projects', 'contents']); const metadata = tx.objectStore('projects').getAll(), contents = tx.objectStore('contents').getAll(); tx.oncomplete = () => resolve({ metadata: metadata.result, contents: contents.result }); });
+    db.close();
+    check(!entries.metadata.some(p => p.name === updatedName) && entries.metadata.length === entries.contents.length && await store.lastProject() === null, 'Deletion removes project metadata, its audio bundle, and the last-opened reference together');
+    $('Undo project deletion').click(); await waitIdle();
+    $('Open project ' + recoveredName).click(); await waitIdle();
+    check(document.querySelectorAll('[data-sound]').length === loadedCount && document.querySelectorAll('polyline.path').length === marksCount + 1, 'Restored project reopens with the large original audio and all marks');
+    const lastMaterial = document.querySelectorAll('[data-sound]')[loadedCount - 1];
+    lastMaterial.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
+    check(calls.at(-1).buffer instanceof AudioBuffer, 'Audio in a restored deleted project still plays');
     const summary = document.createElement('strong'); summary.textContent = 'All browser checks passed.'; document.querySelector('#report').append(summary);
   } catch (error) {
     const summary = document.createElement('strong'); summary.textContent = `Browser checks stopped: ${error.message}`; document.querySelector('#report').append(summary);
