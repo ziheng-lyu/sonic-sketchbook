@@ -9,7 +9,7 @@ test('fast outside-to-outside segments catch all circles in gesture order and in
   const sounds = [{ id: 'right', x: .8, y: .5 }, { id: 'left', x: .2, y: .5 }];
   const forward = crossings({ x: 0, y: .5, t: 100 }, { x: 1, y: .5, t: 1100 }, sounds, { width: 1000, height: 600 });
   assert.deepEqual(forward.map(event => event.soundId), ['left', 'right']);
-  assert.deepEqual(forward.map(event => Math.round(event.at)), [272, 872]);
+  assert.deepEqual(forward.map(event => Math.round(event.at)), [278, 878]);
   const reverse = crossings({ x: 1, y: .5, t: 1500 }, { x: 0, y: .5, t: 2500 }, sounds, { width: 1000, height: 600 });
   assert.deepEqual(reverse.map(event => event.soundId), ['right', 'left']);
 });
@@ -27,7 +27,7 @@ test('crossing geometry holds for narrow touch screens and diagonal gestures', (
   const hits = crossings({ x: 0, y: 0, t: 0 }, { x: 1, y: 1, t: 900 }, [{ id: 'a', x: .5, y: .5 }], { width: 390, height: 844 });
   assert.equal(hits.length, 1);
   assert.ok(hits[0].at > 415 && hits[0].at < 450);
-  assert.deepEqual(keepOnCanvas({ x: -1, y: 2 }, { width: 400, height: 800 }), { x: .085, y: .9575 });
+  assert.deepEqual(keepOnCanvas({ x: -1, y: 2 }, { width: 400, height: 800 }), { x: .1, y: .95 });
 });
 
 test('path selection measures the full polyline and prefers the latest overlapping mark', () => {
@@ -153,8 +153,8 @@ test('unused defaults stay spaced in the top-right corner on desktop and narrow 
     const positions = initialState().sounds.map(sound => soundPosition(sound, size));
     const xs = positions.map(p => p.x * size.width);
     assert.ok(positions.every(p => p.y * size.height <= 64));
-    assert.ok(xs[0] >= size.width - 260);
-    assert.equal(xs.at(-1), size.width - 36);
+    assert.ok(xs[0] >= size.width - 328);
+    assert.equal(xs.at(-1), size.width - 40);
     for (let i = 1; i < xs.length; i++) assert.ok(xs[i] - xs[i - 1] >= 44);
   }
 });

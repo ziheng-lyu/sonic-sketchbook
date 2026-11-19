@@ -1,9 +1,10 @@
-export const SOUND_RADIUS = 28;
+import { FIELD_RADIUS, TRIGGER_RADIUS, shapeIntervals, soundShape, soundRadius } from './shapes.js';
+export const SOUND_RADIUS = FIELD_RADIUS;
 function defaultSoundPosition(index, size) {
-  const gap = Math.min(56, Math.max(0, (size.width - 72) / 4));
+  const gap = Math.min(72, Math.max(0, (size.width - 80) / 4));
   return keepOnCanvas({
-    x: (size.width - 36 - (4 - index) * gap) / size.width,
-    y: Math.min(size.height / 2, size.width <= 600 ? 64 : 40) / size.height,
+    x: (size.width - 40 - (4 - index) * gap) / size.width,
+    y: Math.min(size.height / 2, size.width <= 600 ? 64 : 44) / size.height,
   }, size);
 }
 
@@ -23,7 +24,7 @@ export function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
 // Return the first entry along the whole segment, including fast crossings
 // whose pointer samples both fall outside the circle.
-export function circleEntry(a, b, center, radius = SOUND_RADIUS) {
+export function circleEntry(a, b, center, radius = TRIGGER_RADIUS) {
   const fx = a.x - center.x, fy = a.y - center.y;
   if (fx * fx + fy * fy <= radius * radius + 1e-8) return null;
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -41,8 +42,10 @@ export function crossings(a, b, sounds, size) {
   const from = { x: a.x * size.width, y: a.y * size.height };
   const to = { x: b.x * size.width, y: b.y * size.height };
   return sounds.flatMap(sound => {
-    const t = circleEntry(from, to, { x: sound.x * size.width, y: sound.y * size.height });
-    return t === null ? [] : [{ soundId: sound.id, at: a.t + (b.t - a.t) * t, fraction: t }];
+    const center = { x: sound.x * size.width, y: sound.y * size.height };
+    return shapeIntervals({ x: from.x - center.x, y: from.y - center.y }, { x: to.x - center.x, y: to.y - center.y }, soundShape(sound), soundRadius(sound))
+      .filter(([enter]) => enter > 0)
+      .map(([enter]) => ({ soundId: sound.id, at: a.t + (b.t - a.t) * enter, fraction: enter }));
   }).sort((left, right) => left.fraction - right.fraction);
 }
 
@@ -66,6 +69,6 @@ export function nearestPath(point, paths, size, tolerance = 9) {
 }
 
 export function keepOnCanvas(point, size) {
-  const mx = Math.min(.5, 34 / size.width), my = Math.min(.5, 34 / size.height);
+  const mx = Math.min(.5, 40 / size.width), my = Math.min(.5, 40 / size.height);
   return { x: Math.max(mx, Math.min(1 - mx, point.x)), y: Math.max(my, Math.min(1 - my, point.y)) };
 }

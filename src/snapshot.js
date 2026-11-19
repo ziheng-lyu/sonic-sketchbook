@@ -1,3 +1,5 @@
+import { SHAPES, MODES } from './shapes.js';
+
 export const MAX_SNAPSHOT_BYTES = 20 * 1024 * 1024;
 const MAX_JSON_BYTES = 32 * 1024 * 1024;
 const invalid = () => { throw new Error('This saved sketch is incomplete or damaged.'); };
@@ -106,8 +108,10 @@ export function unpackState(data, externalSources = null) {
     const sounds = frame.sounds.map(sound => {
       if (!knownSounds.has(sound.id) || ids.has(sound.id) || !finite(sound.x) || !finite(sound.y) || sound.x < 0 || sound.x > 1 || sound.y < 0 || sound.y > 1) return invalid();
       if (sound.parked !== undefined && (typeof sound.parked !== 'boolean' || (sound.parked && !/^seed-[0-4]$/.test(sound.id)))) return invalid();
+      if (sound.mode !== undefined && !MODES.includes(sound.mode)) return invalid();
+      if (sound.shape !== undefined && !SHAPES.includes(sound.shape)) return invalid();
       ids.add(sound.id);
-      return { id: sound.id, x: sound.x, y: sound.y, ...(sound.parked !== undefined ? { parked: sound.parked } : {}) };
+      return { id: sound.id, x: sound.x, y: sound.y, ...(sound.parked !== undefined ? { parked: sound.parked } : {}), ...(sound.mode !== undefined ? { mode: sound.mode } : {}), ...(sound.shape !== undefined ? { shape: sound.shape } : {}) };
     });
     const seen = new Set();
     const marks = frame.paths.map(index => {

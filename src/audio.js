@@ -77,6 +77,7 @@ export class AudioEngine {
     return source;
   }
   listen({ event, fresh, points, closed }) {
+    if (!event.envelope) return fresh ? this.play(event.soundId) : undefined;
     let source = this.passages.get(event);
     if (fresh) {
       source = this.play(event.soundId, undefined, [{ at: 0, gain: points[0]?.gain ?? 0 }]);

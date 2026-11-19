@@ -60,7 +60,7 @@ document.querySelector('#run').onclick = async () => {
     check(document.querySelectorAll('[data-sound]').length === 5 && document.querySelectorAll('.path').length === 0, 'Five identical starting materials; empty sketchbook');
     const homeBounds = canvas.getBoundingClientRect();
     const homes = [...document.querySelectorAll('[data-sound]')].map(node => node.transform.baseVal.getItem(0).matrix);
-    check(homes.every(p => p.f <= 64) && homes.at(-1).e >= homeBounds.width - 37, 'Defaults begin in a compact top-right row, leaving the main canvas open');
+    check(homes.every(p => p.f <= 64) && homes.at(-1).e >= homeBounds.width - 41, 'Defaults begin in a compact top-right row, leaving the main canvas open');
     // Move the materials into the workspace to exercise the listening gestures.
     const workspace = [[.25, .31], [.63, .23], [.46, .49], [.75, .62], [.28, .72]];
     for (let i = 0; i < workspace.length; i++) {
@@ -298,15 +298,17 @@ document.querySelector('#run').onclick = async () => {
     const lastMaterial = document.querySelectorAll('[data-sound]')[loadedCount - 1];
     lastMaterial.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
     check(calls.at(-1).buffer instanceof AudioBuffer, 'Audio in a restored deleted project still plays');
-    check([...document.querySelectorAll('.sound-field')].every(node => node.r.baseVal.value === 28) && [...document.querySelectorAll('.sound-mark')].every(node => node.r.baseVal.value === 7), 'Larger sound fields have a soft outer area and a smaller draggable center');
+    check([...document.querySelectorAll('[data-sound]')].every(node => node.dataset.mode === 'trigger' && !!node.querySelector('.sound-plain')), 'Sounds default to the larger outlined version');
     const sustained = new DataTransfer(); sustained.items.add(wav(2)); input.files = sustained.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
     for (let i = 0; i < 100 && document.querySelectorAll('[data-sound]').length === loadedCount; i++) await pause(50);
     await waitIdle();
     const field = [...document.querySelectorAll('[data-sound]')].at(-1), fieldId = field.dataset.sound;
+    field.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
+    $('Proximity playback').click(); await frame(); $('Close sound options').click(); await frame();
     const position = field.transform.baseVal.getItem(0).matrix, bounds = canvas.getBoundingClientRect();
     const atField = (dx, dy, t, type = 'pointermove') => pointer(type, (position.e + dx) / bounds.width, (position.f + dy) / bounds.height, t);
-    await atField(-40, 0, 0, 'pointerdown'); await atField(-24, 0, 100);
+    await atField(-40, 0, 0, 'pointerdown'); await atField(-30, 0, 100);
     const liveSource = calls.filter(call => call.id === fieldId).at(-1)?.source;
     check(!!liveSource?.level, 'Drawing through the expanded outer area starts a real audio voice with its own gain node');
     const audioContext = liveSource.context, analyser = audioContext.createAnalyser(), silent = audioContext.createGain();
@@ -320,7 +322,7 @@ document.querySelector('#run').onclick = async () => {
     const passagesBeforePause = calls.filter(call => call.id === fieldId).length;
     await pause(120); await atField(0, 0, 420);
     check(calls.filter(call => call.id === fieldId).length === passagesBeforePause, 'Pausing in a sound area does not retrigger or loop it');
-    await atField(24, 0, 520); await pause(80);
+    await atField(30, 0, 520); await pause(80);
     check(liveSource.level.gain.value < .1 && rms() < centerRms * .2, 'Moving back toward the edge reduces actual audio continuously');
     await atField(40, 0, 620); await atField(40, 0, 640, 'pointerup'); await pause(100);
     check(liveSource.level.gain.value === 0, 'Leaving the field fades the voice to silence');
@@ -333,6 +335,38 @@ document.querySelector('#run').onclick = async () => {
     $('Replay selected path').click(); await frame();
     check(JSON.stringify(replays.at(-1).events) === JSON.stringify(volumePath.events), 'Rearranging a sound preserves the saved listening volume and timing');
     $('Stop playback').click(); await frame();
+    const currentField = document.querySelector(`[data-sound="${fieldId}"]`);
+    currentField.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
+    check(!!$('Sound options') && $('Proximity playback').getAttribute('aria-pressed') === 'true', 'Clicking or keyboard-activating a sound opens its compact mode and shape menu');
+    for (const mode of ['trigger', 'proximity']) {
+      $(mode === 'trigger' ? 'Whole sound playback' : 'Proximity playback').click(); await frame();
+      for (const shape of ['circle', 'square', 'triangle', 'star', 'organic']) {
+        $(shape[0].toUpperCase() + shape.slice(1) + ' shape').click(); await frame();
+        const node = document.querySelector(`[data-sound="${fieldId}"]`);
+        check(node.dataset.mode === mode && node.dataset.shape === shape && !!node.querySelector(mode === 'trigger' ? '.sound-plain' : '.sound-field'), `${shape} can be selected in ${mode === 'trigger' ? 'whole-clip' : 'proximity'} mode`);
+      }
+    }
+    $('Square shape').click(); await frame(); $('Undo').click(); await frame();
+    check(document.querySelector(`[data-sound="${fieldId}"]`).dataset.shape === 'organic' && document.querySelector(`[data-sound="${fieldId}"]`).dataset.mode === 'proximity', 'Undo restores the previous shape without changing its playback mode');
+    $('Close sound options').click(); await frame();
+    $('Replay selected path').click(); await frame();
+    check(JSON.stringify(replays.at(-1).events) === JSON.stringify(volumePath.events), 'Changing shapes and modes leaves an earlier path volume and timing intact');
+    $('Stop playback').click(); await frame();
+    $('Projects').click(); await frame(); $('Save project').click(); await waitIdle();
+    $('New project').click(); await waitIdle(); $('Open project ' + recoveredName).click(); await waitIdle();
+    const reopenedShape = document.querySelector(`[data-sound="${fieldId}"]`);
+    check(reopenedShape?.dataset.mode === 'proximity' && reopenedShape.dataset.shape === 'organic', 'A reopened local project retains individual sound shape and mode choices');
+    $('Share sketch').click();
+    for (let i = 0; i < 600 && !$('Shareable sketch link'); i++) await pause(100);
+    const geometryLink = $('Shareable sketch link')?.value;
+    const geometryFrame = document.createElement('iframe'); geometryFrame.style.cssText = 'position:fixed;width:320px;height:640px;left:0;top:0;border:0;visibility:hidden';
+    const geometryRoot = new URL('../', location.href); geometryRoot.hash = new URL(geometryLink).hash; geometryFrame.src = geometryRoot.href; document.body.append(geometryFrame);
+    await new Promise((resolve, reject) => { geometryFrame.onload = resolve; setTimeout(() => reject(new Error('Shape restore timed out')), 30000); });
+    let geometryDoc;
+    for (let i = 0; i < 600; i++) { geometryDoc = geometryFrame.contentDocument; if (geometryDoc?.querySelector('main') && !geometryDoc.querySelector('[aria-busy="true"]')) break; await pause(100); }
+    const sharedShape = geometryDoc.querySelector(`[data-sound="${fieldId}"]`);
+    check(sharedShape?.dataset.shape === 'organic' && sharedShape.dataset.mode === 'proximity' && !geometryDoc.querySelector('[role="alert"]'), 'A shared link restores individual geometries and playback modes in a fresh page');
+    geometryFrame.remove();
     const summary = document.createElement('strong'); summary.textContent = 'All browser checks passed.'; document.querySelector('#report').append(summary);
   } catch (error) {
     const summary = document.createElement('strong'); summary.textContent = `Browser checks stopped: ${error.message}`; document.querySelector('#report').append(summary);

@@ -7,7 +7,7 @@ import { initialState, reducer } from '../src/model.js';
 import { packState, unpackState } from '../src/snapshot.js';
 import { createProjectBundle, openProjectBundle } from '../src/bundle.js';
 
-const size = { width: 1000, height: 600 }, sounds = [{ id: 'seed-0', x: .5, y: .5 }];
+const size = { width: 1000, height: 600 }, sounds = [{ id: 'seed-0', x: .5, y: .5, mode: 'proximity' }];
 const point = (x, y, t) => ({ x: x / size.width, y: y / size.height, t });
 const peak = event => Math.max(...event.envelope.map(p => p.gain));
 
@@ -15,7 +15,7 @@ test('proximity gain is continuous, symmetric, quiet at the edge, and loudest at
   assert.equal(proximityGain(0), 1); assert.equal(proximityGain(SOUND_RADIUS), 0);
   assert.equal(proximityGain(1000), 0); assert.equal(proximityGain(SOUND_RADIUS / 2), .5);
   assert.ok(proximityGain(4) > proximityGain(12) && proximityGain(12) > proximityGain(24));
-  assert.ok(proximityGain(27.99) < .00001);
+  assert.ok(proximityGain(SOUND_RADIUS - .01) < .00001);
 });
 
 test('fast full-field crossing captures entry, central peak, and quiet exit without a sample inside', () => {
@@ -23,15 +23,15 @@ test('fast full-field crossing captures entry, central peak, and quiet exit with
   const updates = g.advance(point(400, 300, 0), point(600, 300, 1000));
   assert.equal(updates.length, 1); assert.equal(g.events.length, 1);
   assert.equal(updates[0].fresh, true); assert.equal(updates[0].closed, true);
-  assert.equal(g.events[0].at, 360); assert.equal(peak(g.events[0]), 1);
-  assert.equal(g.events[0].envelope.at(-1).at, 280); assert.equal(g.events[0].envelope.at(-1).gain, 0);
+  assert.equal(g.events[0].at, 330); assert.equal(peak(g.events[0]), 1);
+  assert.ok(Math.abs(g.events[0].envelope.at(-1).at - 340) < 1e-8); assert.equal(g.events[0].envelope.at(-1).gain, 0);
 });
 
 test('near-edge passes stay quieter and tangent or outside passes do not trigger', () => {
   const center = new ListeningGesture(sounds, size), edge = new ListeningGesture(sounds, size), outside = new ListeningGesture(sounds, size);
   center.advance(point(400, 300, 0), point(600, 300, 1000));
-  edge.advance(point(400, 324, 0), point(600, 324, 1000));
-  outside.advance(point(400, 328, 0), point(600, 328, 1000));
+  edge.advance(point(400, 330, 0), point(600, 330, 1000));
+  outside.advance(point(400, 334, 0), point(600, 334, 1000));
   assert.ok(peak(edge.events[0]) > 0 && peak(edge.events[0]) < .1);
   assert.equal(outside.events.length, 0); assert.ok(peak(center.events[0]) > peak(edge.events[0]));
 });
@@ -52,7 +52,7 @@ test('slow approach, pause and retreat update one visit; leaving and returning s
 });
 
 test('starting a stroke in the outer field and overlapping fields have independent envelopes', () => {
-  const g = new ListeningGesture([...sounds, { id: 'seed-1', x: .52, y: .5 }], size);
+  const g = new ListeningGesture([...sounds, { id: 'seed-1', x: .52, y: .5, mode: 'proximity' }], size);
   g.advance(point(480, 300, 0), point(510, 300, 300));
   g.finish(500);
   assert.deepEqual(g.events.map(e => e.soundId), ['seed-0', 'seed-1']);

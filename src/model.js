@@ -1,3 +1,4 @@
+import { SHAPES, MODES } from './shapes.js';
 import { initialSounds } from './geometry.js';
 
 export function initialState() {
@@ -15,6 +16,11 @@ export function reducer(state, action) {
   let next;
   if (action.type === 'path') next = { ...state, paths: [...state.paths, action.path], selected: action.path.id };
   if (action.type === 'move') next = { ...state, sounds: state.sounds.map(sound => sound.id === action.id ? { ...sound, ...action.position, ...(sound.parked ? { parked: false } : {}) } : sound) };
+  if (action.type === 'configure' && (!action.mode || MODES.includes(action.mode)) && (!action.shape || SHAPES.includes(action.shape))) {
+    const sound = state.sounds.find(item => item.id === action.id);
+    const changed = sound && ((action.mode && action.mode !== (sound.mode || 'trigger')) || (action.shape && action.shape !== (sound.shape || 'circle')));
+    if (changed) next = { ...state, sounds: state.sounds.map(item => item.id === action.id ? { ...item, ...(action.mode ? { mode: action.mode } : {}), ...(action.shape ? { shape: action.shape } : {}) } : item) };
+  }
   if (action.type === 'add') next = { ...state, sounds: [...state.sounds, ...action.sounds] };
   return next ? { ...next, history: [...state.history, previous] } : state;
 }
