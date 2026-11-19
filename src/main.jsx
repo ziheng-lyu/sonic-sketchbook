@@ -398,7 +398,7 @@ function App() {
   }
   function pointerMove(event) {
     const g = gesture.current;
-    if (g?.type === 'move' && event.pointerId === g.pointerId && event.pointerType === 'mouse' && event.buttons === 0) {
+    if (g && event.pointerId === g.pointerId && event.pointerType === 'mouse' && event.buttons === 0) {
       // Recover a missed release without following later, unpressed hover moves.
       pointerUp(event, false); return;
     }
@@ -422,7 +422,9 @@ function App() {
       if (g.moved) dispatch({ type: 'move', id: g.sound.id, position: g.position });
       else { audition(g.sound.id); setSoundMenu(g.sound.id); }
     } else if (g.moved) {
-      const duration = Math.max(0, event.timeStamp - g.started);
+      // Recovery has no reliable release coordinates or time. Keep the last
+      // pressed sample, including input not yet painted in the draft.
+      const duration = sampleEnd ? Math.max(g.points.at(-1).t, event.timeStamp - g.started) : g.points.at(-1).t;
       g.listening.finish(duration).forEach(update => engine.current.listen(update));
       dispatch({ type: 'path', path: { id: crypto.randomUUID(), points: g.points, events: g.listening.events, duration } });
     } else {
@@ -436,9 +438,9 @@ function App() {
   function lostCapture(event) {
     const g = gesture.current;
     if (g?.pointerId !== event.pointerId) return;
-    // Losing capture is not a request to undo a move. Its coordinates may be
-    // absent, so retain the final sampled position, exactly once.
-    if (g.type === 'move' && g.moved) pointerUp(event, false);
+    // Losing capture is not a request to discard a sketch or undo a move.
+    // Retain the sampled gesture once, without interpreting capture coordinates.
+    if (g.moved) pointerUp(event, false);
     else cancelPointer(event);
   }
 
