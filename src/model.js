@@ -24,6 +24,8 @@ export function reducer(state, action) {
     const changed = sound && ((action.mode && action.mode !== (sound.mode || 'trigger')) || (action.shape && action.shape !== (sound.shape || 'circle')) || (action.outline && action.outline !== sound.outline) || (action.scale !== undefined && action.scale !== soundScale(sound)));
     if (changed) next = { ...state, sounds: state.sounds.map(item => item.id === action.id ? { ...item, ...(action.mode ? { mode: action.mode } : {}), ...(action.shape ? { shape: action.shape } : {}), ...(action.outline ? { outline: action.outline } : {}), ...(action.scale !== undefined ? { scale: action.scale } : {}) } : item) };
   }
+  if (action.type === 'clear-paths' && state.paths.length) next = { ...state, paths: [], selected: null };
+  if (action.type === 'remove-sound' && state.sounds.some(sound => sound.id === action.id)) next = { ...state, sounds: state.sounds.filter(sound => sound.id !== action.id) };
   if (action.type === 'add') next = { ...state, sounds: [...state.sounds, ...action.sounds] };
   return next ? { ...next, history: [...state.history, previous] } : state;
 }

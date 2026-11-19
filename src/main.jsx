@@ -19,6 +19,7 @@ function Icon({ name }) {
     upload: <><path d="M12 16V4m-4 4 4-4 4 4"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></>,
     mic: <><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 10v1a6 6 0 0 0 12 0v-1M12 17v4m-3 0h6"/></>,
     undo: <><path d="m8 5-5 5 5 5"/><path d="M3 10h10a7 7 0 0 1 7 7v2"/></>,
+    clear: <><path d="m4 14 9-10a2 2 0 0 1 3 0l4 4a2 2 0 0 1 0 3l-8 9H8l-4-4a2 2 0 0 1 0-2Zm5-5 8 8M12 20h9" /></>,
     play: <path d="m9 5 10 7-10 7Z"/>,
     stop: <rect x="6" y="6" width="12" height="12" rx="1"/>,
     share: <><path d="m10 13 4-4"/><path d="M8 16H6a4 4 0 0 1-3-7l4-4a4 4 0 0 1 6 0M16 8h2a4 4 0 0 1 3 7l-4 4a4 4 0 0 1-6 0"/></>,
@@ -220,6 +221,12 @@ function App() {
     if (restoring.current) return;
     gesture.current = null; setDraft(null); setMoving(null);
     stopPlayback(); dispatch({ type: 'undo' });
+  }
+
+  function editCanvas(action) {
+    if (restoring.current) return;
+    gesture.current = null; setDraft(null); setMoving(null); setSoundMenu(null); setSizePreview(null);
+    stopPlayback(); dispatch(action);
   }
 
   function shareError(failure) {
@@ -499,6 +506,7 @@ function App() {
     </svg>
     {optionSound && <SoundOptions key={optionSound.id} sound={optionSound} position={optionSound} size={size}
       onChange={change => { stopPlayback(); setSizePreview(null); dispatch({ type: 'configure', id: optionSound.id, ...change }); }}
+      onDelete={() => editCanvas({ type: 'remove-sound', id: optionSound.id })}
       onSizePreview={scale => { stopPlayback(); setSizePreview(scale === null ? null : { id: optionSound.id, scale }); }}
       onClose={() => { setSoundMenu(null); setSizePreview(null); }} />}
     <div className="controls" role="toolbar" aria-label="Sketchbook controls">
@@ -509,6 +517,8 @@ function App() {
       </button>
       <span className="divider" aria-hidden="true" />
       <button aria-label="Undo" disabled={loading || !state.history.length} onClick={undo}><Icon name="undo" /></button>
+      <button aria-label="Clear all lines" disabled={busy || !state.paths.length || recording !== 'idle'}
+        onClick={() => editCanvas({ type: 'clear-paths' })}><Icon name="clear" /></button>
       <button aria-label={playing ? 'Stop playback' : 'Replay selected path'} disabled={loading || !state.selected || recording !== 'idle'} onClick={playSelected}><Icon name={playing ? 'stop' : 'play'} /></button>
       <button aria-label={saving ? 'Sharing sketch' : 'Share sketch'} disabled={busy || recording !== 'idle' || saving}
         onClick={save}><Icon name="share" /></button>

@@ -28,7 +28,7 @@ export function SoundMark({ sound }) {
     <ShapeMark shape={shape} radius={Math.min(12, 8 * scale)} className="sound-mark" />
   </> : <><circle r={Math.min(12, 10 * scale)} className="sound-target" /><ShapeMark shape={shape} radius={soundRadius(sound)} className="sound-plain" /></>;
 }
-export function SoundOptions({ sound, position, size, onChange, onSizePreview, onClose }) {
+export function SoundOptions({ sound, position, size, onChange, onSizePreview, onDelete, onClose }) {
   const [editing, setEditing] = useState(false);
   const resizeAnchor = useRef(null);
   const height = editing ? 390 : 170;
@@ -46,6 +46,7 @@ export function SoundOptions({ sound, position, size, onChange, onSizePreview, o
       <button aria-label="Draw a custom shape" aria-pressed={editing || soundShape(sound) === 'custom'} onClick={() => setEditing(!editing)}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 14Z" /></svg>
       </button>
+      <button aria-label="Delete sound" onClick={onDelete}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5" /></svg></button>
       <button className="sound-options-close" aria-label="Close sound options" onClick={onClose}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg></button>
     </div>
     <div className="sound-shape-options" role="group" aria-label="Sound shape">

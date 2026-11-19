@@ -105,7 +105,7 @@ export function unpackState(data, externalSources = null) {
   });
   const outlines = new Map();
   const frames = data.frames.map(frame => {
-    if (!Array.isArray(frame.sounds) || !Array.isArray(frame.paths) || !frame.sounds.length || frame.sounds.length > 505 || frame.paths.length > 2000) return invalid();
+    if (!Array.isArray(frame.sounds) || !Array.isArray(frame.paths) || frame.sounds.length > 505 || frame.paths.length > 2000) return invalid();
     const ids = new Set();
     const sounds = frame.sounds.map(sound => {
       if (!knownSounds.has(sound.id) || ids.has(sound.id) || !finite(sound.x) || !finite(sound.y) || sound.x < 0 || sound.x > 1 || sound.y < 0 || sound.y > 1) return invalid();

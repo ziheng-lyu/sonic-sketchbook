@@ -115,3 +115,5 @@ button svg { width: 20px; height: 20px; }
 .sound-size-control svg { width: 20px; height: 20px; flex-shrink: 0; fill: #eeede8; stroke: #9f9b90; stroke-width: 1.2; }
 .sound-size-control input { flex: 1; min-width: 0; height: 28px; margin: 0; accent-color: #8c887e; cursor: pointer; }
 .sound-size-control input:focus-visible { outline: 1.5px solid #838077; outline-offset: 2px; border-radius: 4px; }
+
+.sound-mode-options { gap: 3px; }
