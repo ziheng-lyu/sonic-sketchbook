@@ -69,7 +69,8 @@ export function nearestPath(point, paths, size, tolerance = 9) {
   return best;
 }
 
-export const soundPadding = sound => Math.max(40, soundRadius(sound) * 1.17 + 6);
+// Keep the grab point reachable while large listening areas can extend off-canvas.
+export const soundPadding = () => 40;
 
 export function keepOnCanvas(point, size, padding = 40) {
   const mx = Math.min(.5, padding / size.width), my = Math.min(.5, padding / size.height);

@@ -481,6 +481,22 @@ document.querySelector('#run').onclick = async () => {
     for (let i = 0; i < 600; i++) { sizedDoc = sizedFrame.contentDocument; if (sizedDoc?.querySelector('main') && !sizedDoc.querySelector('[aria-busy="true"]')) break; await pause(100); }
     check(sizedDoc.querySelector(`[data-sound="${fieldId}"]`)?.dataset.scale === '2' && sizedDoc.querySelector(`[data-sound="${fieldId}"] .sound-field`)?.getAttribute('d') === sizedPath && !sizedDoc.querySelector('[role="alert"]'), 'A shared link restores the same custom size in a fresh page');
     sizedFrame.remove();
+    $('Close saved link').click(); await frame();
+    document.querySelector(`[data-sound="${fieldId}"]`).dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
+    await sizePointer('pointerdown'); await changeSize(20); await sizePointer('pointerup');
+    check(Number(resizeInput().max) === 20 && document.querySelector(`[data-sound="${fieldId}"]`).dataset.scale === '20', 'The slider supports sizes four times the previous maximum');
+    const giantHandle = document.querySelector(`[data-sound="${fieldId}"] .sound-target`).getBoundingClientRect();
+    check(giantHandle.width <= 44.1 && giantHandle.height <= 44.1, 'A giant proximity area keeps a compact draggable handle');
+    $('Close sound options').click(); await frame();
+    $('Projects').click(); await frame(); $('Save project').click(); await waitIdle();
+    $('New project').click(); await waitIdle(); $('Open project ' + recoveredName).click(); await waitIdle();
+    check(document.querySelector(`[data-sound="${fieldId}"]`).dataset.scale === '20', 'A maximum-size freehand sound reopens from the local project');
+    $('Share sketch').click();
+    for (let i = 0; i < 600 && !$('Shareable sketch link'); i++) await pause(100);
+    const giantLink = $('Shareable sketch link')?.value;
+    const { loadSketch } = await import('../src/share.js');
+    const giantSnapshot = await loadSketch(new URL(giantLink).hash);
+    check(giantSnapshot.state.sounds.find(sound => sound.id === fieldId)?.scale === 20, 'A shared link retains the expanded maximum size');
     const summary = document.createElement('strong'); summary.textContent = 'All browser checks passed.'; document.querySelector('#report').append(summary);
   } catch (error) {
     const summary = document.createElement('strong'); summary.textContent = `Browser checks stopped: ${error.message}`; document.querySelector('#report').append(summary);

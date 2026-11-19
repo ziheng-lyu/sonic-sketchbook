@@ -14,19 +14,19 @@ export function SoundMark({ sound }) {
     const radius = soundRadius(sound);
     return field ? <>
       <defs><clipPath id={clip}><ShapeMark shape={shape} outline={sound.outline} radius={radius} clipRule="evenodd" /></clipPath></defs>
-      <g clipPath={`url(#${clip})`}><path d={customInsetPath(sound.outline, .33, 1)} transform={`scale(${radius})`} className="sound-target" /></g>
+      <circle r={Math.min(22, 18 * scale)} clipPath={`url(#${clip})`} className="sound-target" />
       <ShapeMark shape={shape} outline={sound.outline} radius={radius} className="sound-field" />
       <g clipPath={`url(#${clip})`}><path d={customInsetPath(sound.outline, .33, 1)} transform={`scale(${radius})`} className="sound-inner" /></g>
-      <circle r={Math.min(6 * scale, customGeometry(sound.outline).depth * radius * .45)} clipPath={`url(#${clip})`} className="sound-mark" />
+      <circle r={Math.min(10, 6 * scale, customGeometry(sound.outline).depth * radius * .45)} clipPath={`url(#${clip})`} className="sound-mark" />
     </> : <ShapeMark shape={shape} outline={sound.outline} radius={radius} className="sound-plain" />;
   }
   return field ? <>
-    <circle r={10 * scale} className="sound-target" />
-    <ShapeMark shape={shape} radius={18 * scale} className="sound-target" />
+    <circle r={Math.min(12, 10 * scale)} className="sound-target" />
+    <ShapeMark shape={shape} radius={Math.min(22, 18 * scale)} className="sound-target" />
     <ShapeMark shape={shape} radius={soundRadius(sound)} className="sound-field" />
     <ShapeMark shape={shape} radius={23 * scale} className="sound-inner" />
-    <ShapeMark shape={shape} radius={8 * scale} className="sound-mark" />
-  </> : <><circle r={10 * scale} className="sound-target" /><ShapeMark shape={shape} radius={soundRadius(sound)} className="sound-plain" /></>;
+    <ShapeMark shape={shape} radius={Math.min(12, 8 * scale)} className="sound-mark" />
+  </> : <><circle r={Math.min(12, 10 * scale)} className="sound-target" /><ShapeMark shape={shape} radius={soundRadius(sound)} className="sound-plain" /></>;
 }
 export function SoundOptions({ sound, position, size, onChange, onSizePreview, onClose }) {
   const [editing, setEditing] = useState(false);

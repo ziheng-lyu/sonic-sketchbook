@@ -5,7 +5,7 @@ export const FIELD_RADIUS = 34;
 export const SHAPES = ['circle', 'square', 'triangle', 'star', 'organic'];
 export const VALID_SHAPES = [...SHAPES, 'custom'];
 export const MIN_SCALE = .5;
-export const MAX_SCALE = 5;
+export const MAX_SCALE = 20;
 export const validScale = value => typeof value === 'number' && Number.isFinite(value) && value >= MIN_SCALE && value <= MAX_SCALE;
 export const soundScale = sound => sound.scale ?? 1;
 export const MODES = ['trigger', 'proximity'];
