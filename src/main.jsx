@@ -2,7 +2,7 @@ import React, { memo, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { createRoot } from 'react-dom/client';
 import { AudioEngine } from './audio.js';
 import { Microphone } from './recorder.js';
-import { keepOnCanvas, nearestPath, soundPosition } from './geometry.js';
+import { keepOnCanvas, nearestPath, soundPosition, soundPadding } from './geometry.js';
 import { ListeningGesture } from './listening.js';
 import { initialState, reducer } from './model.js';
 import { isSavedLink, loadSketch, saveSketch } from './share.js';
@@ -10,7 +10,7 @@ import * as projectStore from './projects.js';
 import { createProjectBundle, openProjectBundle, projectName } from './bundle.js';
 import { ProjectPanel } from './ProjectPanel.jsx';
 import { SoundMark, SoundOptions } from './SoundOptions.jsx';
-import { soundShape, soundMode } from './shapes.js';
+import { soundShape, soundMode, soundScale } from './shapes.js';
 import './style.css';
 
 function Icon({ name }) {
@@ -49,12 +49,16 @@ function App() {
   const [shareURL, setShareURL] = useState('');
   const [copied, setCopied] = useState(false);
   const [soundMenu, setSoundMenu] = useState(null);
+  const [sizePreview, setSizePreview] = useState(null);
   const restoring = useRef(loading), lastSaved = useRef(null), shareInput = useRef(null);
   const svg = useRef(null), fileInput = useRef(null), gesture = useRef(null);
   const engine = useRef(null), microphone = useRef(null), playTimer = useRef(null);
   const playbackEpoch = useRef(0), mounted = useRef(true), current = useRef(state);
   current.current = state;
-  const viewSounds = state.sounds.map(sound => ({ ...sound, ...soundPosition(sound, size) }));
+  const viewSounds = state.sounds.map(sound => {
+    const visible = sizePreview?.id === sound.id ? { ...sound, scale: sizePreview.scale } : sound;
+    return { ...visible, ...soundPosition(visible, size) };
+  });
   const optionSound = viewSounds.find(sound => sound.id === soundMenu);
   if (!engine.current) engine.current = new AudioEngine();
 
@@ -111,7 +115,7 @@ function App() {
     setActiveProject(metadata);
     savedProjectRef.current = metadata.saved ? { state: saved.state, name: projectName(metadata.name) } : null;
     setLocalStatus(metadata.saved ? 'Saved in this browser' : 'Not saved yet');
-    lastSaved.current = null; setShareURL(''); setSoundMenu(null); setError('');
+    lastSaved.current = null; setShareURL(''); setSoundMenu(null); setSizePreview(null); setError('');
     return true;
   }
   async function changeProject(id) {
@@ -296,7 +300,7 @@ function App() {
         event.preventDefault(); undo();
       }
       if (event.key === 'Escape') {
-        gesture.current = null; setDraft(null); setMoving(null); stopPlayback(); setError(''); setShareURL(''); setProjectMenu(false); setSoundMenu(null);
+        gesture.current = null; setDraft(null); setMoving(null); stopPlayback(); setError(''); setShareURL(''); setProjectMenu(false); setSoundMenu(null); setSizePreview(null);
       }
       if (event.code === 'Space' && event.target === document.body) { event.preventDefault(); playSelected(); }
     };
@@ -320,7 +324,8 @@ function App() {
   }
   function pointerDown(event) {
     if (event.button !== 0 || gesture.current || restoring.current) return;
-    setShareURL(''); setProjectMenu(false); setSoundMenu(null);
+    if (sizePreview) dispatch({ type: 'configure', id: sizePreview.id, scale: sizePreview.scale });
+    setShareURL(''); setProjectMenu(false); setSoundMenu(null); setSizePreview(null);
     event.preventDefault();
     stopPlayback(); unlock();
     const p = point(event);
@@ -341,7 +346,7 @@ function App() {
     if (travel > 3) g.moved = true;
     if (g.type === 'move') {
       if (!g.moved) return;
-      g.position = keepOnCanvas({ x: g.sound.x + p.x - g.start.x, y: g.sound.y + p.y - g.start.y }, g.size);
+      g.position = keepOnCanvas({ x: g.sound.x + p.x - g.start.x, y: g.sound.y + p.y - g.start.y }, g.size, soundPadding(g.sound));
       setMoving({ id: g.sound.id, ...g.position });
     } else {
       const previous = g.points.at(-1);
@@ -458,7 +463,7 @@ function App() {
   const busy = loading || projectWorking || recording === 'requesting' || recording === 'saving' || importing;
   return <main className="sketchbook" aria-busy={loading || saving} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); addFiles([...event.dataTransfer.files]); }}>
     <button className="projects-toggle" aria-label="Projects" aria-expanded={projectMenu} disabled={busy || recording !== 'idle'}
-      onClick={() => { setProjectMenu(!projectMenu); setSoundMenu(null); setShareURL(''); refreshProjects().catch(failure => report(failure.message)); }}><Icon name="folder" /></button>
+      onClick={() => { setProjectMenu(!projectMenu); setSoundMenu(null); setSizePreview(null); setShareURL(''); refreshProjects().catch(failure => report(failure.message)); }}><Icon name="folder" /></button>
     {projectMenu && <ProjectPanel project={project} projects={projectList} status={localSaving ? 'Saving…' : localStatus}
       working={projectWorking || loading || importing || recording !== 'idle' || localSaving}
       onName={name => { setActiveProject({ ...projectRef.current, name }); setLocalStatus('Unsaved changes'); }}
@@ -476,7 +481,7 @@ function App() {
       {draft && <polyline points={line(draft)} className="path selected draft" />}
       {viewSounds.map((sound, index) => {
         const position = moving?.id === sound.id ? moving : sound;
-        return <g key={sound.id} data-sound={sound.id} data-mode={soundMode(sound)} data-shape={soundShape(sound)} className="sound" transform={`translate(${position.x * size.width} ${position.y * size.height})`}
+        return <g key={sound.id} data-sound={sound.id} data-mode={soundMode(sound)} data-shape={soundShape(sound)} data-scale={soundScale(sound)} className="sound" transform={`translate(${position.x * size.width} ${position.y * size.height})`}
           role="button" tabIndex="0" aria-label={`Play sound ${index + 1}`}
           onKeyDown={event => {
             if (restoring.current) return;
@@ -485,7 +490,7 @@ function App() {
             if (steps[event.key]) {
               event.preventDefault(); stopPlayback();
               const [x, y] = steps[event.key];
-              dispatch({ type: 'move', id: sound.id, position: keepOnCanvas({ x: sound.x + x / size.width, y: sound.y + y / size.height }, size) });
+              dispatch({ type: 'move', id: sound.id, position: keepOnCanvas({ x: sound.x + x / size.width, y: sound.y + y / size.height }, size, soundPadding(sound)) });
             }
           }}>
           <SoundMark sound={sound} />
@@ -493,8 +498,9 @@ function App() {
       })}
     </svg>
     {optionSound && <SoundOptions key={optionSound.id} sound={optionSound} position={optionSound} size={size}
-      onChange={change => { stopPlayback(); dispatch({ type: 'configure', id: optionSound.id, ...change }); }}
-      onClose={() => setSoundMenu(null)} />}
+      onChange={change => { stopPlayback(); setSizePreview(null); dispatch({ type: 'configure', id: optionSound.id, ...change }); }}
+      onSizePreview={scale => { stopPlayback(); setSizePreview(scale === null ? null : { id: optionSound.id, scale }); }}
+      onClose={() => { setSoundMenu(null); setSizePreview(null); }} />}
     <div className="controls" role="toolbar" aria-label="Sketchbook controls">
       <button aria-label="Upload audio" disabled={busy} onClick={() => fileInput.current.click()}><Icon name="upload" /></button>
       <button aria-label={recording === 'recording' ? 'Finish recording' : recording === 'requesting' ? 'Waiting for microphone permission' : 'Record sound'}

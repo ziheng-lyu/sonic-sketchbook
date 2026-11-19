@@ -17,7 +17,8 @@ export const initialSounds = Array.from({ length: 5 }, (_, index) => ({
 export function soundPosition(sound, size) {
   const index = sound.parked === true && /^seed-[0-4]$/.test(sound.id)
     ? Number(sound.id.slice(-1)) : null;
-  return index === null ? keepOnCanvas(sound, size) : defaultSoundPosition(index, size);
+  const position = index === null ? sound : defaultSoundPosition(index, size);
+  return keepOnCanvas(position, size, soundPadding(sound));
 }
 
 export function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
@@ -68,7 +69,9 @@ export function nearestPath(point, paths, size, tolerance = 9) {
   return best;
 }
 
-export function keepOnCanvas(point, size) {
-  const mx = Math.min(.5, 40 / size.width), my = Math.min(.5, 40 / size.height);
+export const soundPadding = sound => Math.max(40, soundRadius(sound) * 1.17 + 6);
+
+export function keepOnCanvas(point, size, padding = 40) {
+  const mx = Math.min(.5, padding / size.width), my = Math.min(.5, padding / size.height);
   return { x: Math.max(mx, Math.min(1 - mx, point.x)), y: Math.max(my, Math.min(1 - my, point.y)) };
 }

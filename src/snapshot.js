@@ -1,5 +1,5 @@
 import { validOutline } from './custom-shape.js';
-import { VALID_SHAPES, MODES } from './shapes.js';
+import { VALID_SHAPES, MODES, validScale } from './shapes.js';
 
 export const MAX_SNAPSHOT_BYTES = 20 * 1024 * 1024;
 const MAX_JSON_BYTES = 32 * 1024 * 1024;
@@ -112,6 +112,7 @@ export function unpackState(data, externalSources = null) {
       if (sound.parked !== undefined && (typeof sound.parked !== 'boolean' || (sound.parked && !/^seed-[0-4]$/.test(sound.id)))) return invalid();
       if (sound.mode !== undefined && !MODES.includes(sound.mode)) return invalid();
       if (sound.shape !== undefined && !VALID_SHAPES.includes(sound.shape)) return invalid();
+      if (sound.scale !== undefined && !validScale(sound.scale)) return invalid();
       let outline;
       if (sound.outline !== undefined) {
         if (!Array.isArray(sound.outline) || sound.outline.length > 192) return invalid();
@@ -124,7 +125,7 @@ export function unpackState(data, externalSources = null) {
       }
       if (sound.shape === 'custom' && !outline) return invalid();
       ids.add(sound.id);
-      return { id: sound.id, x: sound.x, y: sound.y, ...(sound.parked !== undefined ? { parked: sound.parked } : {}), ...(sound.mode !== undefined ? { mode: sound.mode } : {}), ...(sound.shape !== undefined ? { shape: sound.shape } : {}), ...(outline ? { outline } : {}) };
+      return { id: sound.id, x: sound.x, y: sound.y, ...(sound.parked !== undefined ? { parked: sound.parked } : {}), ...(sound.mode !== undefined ? { mode: sound.mode } : {}), ...(sound.shape !== undefined ? { shape: sound.shape } : {}), ...(outline ? { outline } : {}), ...(sound.scale !== undefined ? { scale: sound.scale } : {}) };
     });
     const seen = new Set();
     const marks = frame.paths.map(index => {

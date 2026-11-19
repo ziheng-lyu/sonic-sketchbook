@@ -110,3 +110,8 @@ button svg { width: 20px; height: 20px; }
 .custom-outline-preview { fill: #eeede8; stroke: #a7a49a; stroke-width: 1.2; }
 .shape-editor-actions { display: flex; justify-content: space-between; margin-top: 5px; }
 .sound-options button:disabled { opacity: .28; cursor: default; }
+
+.sound-size-control { display: flex; align-items: center; gap: 10px; padding: 9px 3px 2px; margin-top: 7px; border-top: 1px solid #e4e2dc; }
+.sound-size-control svg { width: 20px; height: 20px; flex-shrink: 0; fill: #eeede8; stroke: #9f9b90; stroke-width: 1.2; }
+.sound-size-control input { flex: 1; min-width: 0; height: 28px; margin: 0; accent-color: #8c887e; cursor: pointer; }
+.sound-size-control input:focus-visible { outline: 1.5px solid #838077; outline-offset: 2px; border-radius: 4px; }

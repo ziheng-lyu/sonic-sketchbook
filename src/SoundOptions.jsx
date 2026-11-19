@@ -1,39 +1,41 @@
-import React, { useId, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
+import { SizeControl } from './SizeControl.jsx';
 import { ShapeEditor } from './ShapeEditor.jsx';
 import { customInsetPath, customGeometry } from './custom-shape.js';
-import { SHAPES, shapePath, soundMode, soundShape, soundRadius } from './shapes.js';
+import { SHAPES, shapePath, soundMode, soundShape, soundRadius, soundScale } from './shapes.js';
 
 export function ShapeMark({ shape = 'circle', radius = 1, outline, ...props }) {
   return <path fillRule="evenodd" d={shapePath(shape, radius, outline)} {...props} />;
 }
 export function SoundMark({ sound }) {
   const shape = soundShape(sound), field = soundMode(sound) === 'proximity';
-  const clip = useId();
+  const clip = useId(), scale = soundScale(sound);
   if (shape === 'custom') {
     const radius = soundRadius(sound);
     return field ? <>
       <defs><clipPath id={clip}><ShapeMark shape={shape} outline={sound.outline} radius={radius} clipRule="evenodd" /></clipPath></defs>
-      <path d={customInsetPath(sound.outline, .33, radius)} clipPath={`url(#${clip})`} className="sound-target" />
+      <g clipPath={`url(#${clip})`}><path d={customInsetPath(sound.outline, .33, 1)} transform={`scale(${radius})`} className="sound-target" /></g>
       <ShapeMark shape={shape} outline={sound.outline} radius={radius} className="sound-field" />
-      <path d={customInsetPath(sound.outline, .33, radius)} clipPath={`url(#${clip})`} className="sound-inner" />
-      <circle r={Math.min(6, customGeometry(sound.outline).depth * radius * .45)} clipPath={`url(#${clip})`} className="sound-mark" />
+      <g clipPath={`url(#${clip})`}><path d={customInsetPath(sound.outline, .33, 1)} transform={`scale(${radius})`} className="sound-inner" /></g>
+      <circle r={Math.min(6 * scale, customGeometry(sound.outline).depth * radius * .45)} clipPath={`url(#${clip})`} className="sound-mark" />
     </> : <ShapeMark shape={shape} outline={sound.outline} radius={radius} className="sound-plain" />;
   }
   return field ? <>
-    <circle r="10" className="sound-target" />
-    <ShapeMark shape={shape} radius={18} className="sound-target" />
+    <circle r={10 * scale} className="sound-target" />
+    <ShapeMark shape={shape} radius={18 * scale} className="sound-target" />
     <ShapeMark shape={shape} radius={soundRadius(sound)} className="sound-field" />
-    <ShapeMark shape={shape} radius="23" className="sound-inner" />
-    <ShapeMark shape={shape} radius="8" className="sound-mark" />
-  </> : <><circle r="10" className="sound-target" /><ShapeMark shape={shape} radius={soundRadius(sound)} className="sound-plain" /></>;
+    <ShapeMark shape={shape} radius={23 * scale} className="sound-inner" />
+    <ShapeMark shape={shape} radius={8 * scale} className="sound-mark" />
+  </> : <><circle r={10 * scale} className="sound-target" /><ShapeMark shape={shape} radius={soundRadius(sound)} className="sound-plain" /></>;
 }
-export function SoundOptions({ sound, position, size, onChange, onClose }) {
+export function SoundOptions({ sound, position, size, onChange, onSizePreview, onClose }) {
   const [editing, setEditing] = useState(false);
-  const height = editing ? 350 : 130;
+  const resizeAnchor = useRef(null);
+  const height = editing ? 390 : 170;
   const left = Math.max(12, Math.min(size.width - 256, position.x * size.width - 122));
   const below = position.y * size.height + soundRadius(sound) + 12;
   const top = Math.max(12, Math.min(size.height - height - 90, below + height < size.height - 90 ? below : position.y * size.height - soundRadius(sound) - height - 12));
-  return <section className="sound-options" role="dialog" aria-label="Sound options" style={{ left, top }}>
+  return <section className="sound-options" role="dialog" aria-label="Sound options" style={resizeAnchor.current || { left, top }}>
     <div className="sound-mode-options" role="group" aria-label="Playback mode">
       <button aria-label="Whole sound playback" aria-pressed={soundMode(sound) === 'trigger'} onClick={() => onChange({ mode: 'trigger' })}>
         <svg viewBox="-16 -16 32 32" aria-hidden="true"><circle r="10" className="mode-plain" /></svg>
@@ -51,6 +53,10 @@ export function SoundOptions({ sound, position, size, onChange, onClose }) {
         <svg viewBox="-14 -14 28 28" aria-hidden="true"><ShapeMark shape={shape} radius={10} className="mode-plain" /></svg>
       </button>)}
     </div>
+    <SizeControl value={soundScale(sound)}
+      onPreview={value => { if (!resizeAnchor.current) resizeAnchor.current = { left, top }; onSizePreview(value); }}
+      onCommit={value => { resizeAnchor.current = null; onChange({ scale: value }); }}
+      onCancel={() => { resizeAnchor.current = null; onSizePreview(null); }} />
     {editing && <ShapeEditor key={sound.id} outline={sound.outline} onApply={outline => { onChange({ shape: 'custom', outline }); setEditing(false); }} />}
   </section>;
 }
