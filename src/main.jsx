@@ -54,6 +54,8 @@ function App() {
   const [sizePreview, setSizePreview] = useState(null);
   const restoring = useRef(loading), lastSaved = useRef(null), shareInput = useRef(null);
   const svg = useRef(null), fileInput = useRef(null), gesture = useRef(null);
+  const gestureActions = useRef(null);
+  gestureActions.current = { release: pointerUp, cancel: cancelPointer };
   const engine = useRef(null), microphone = useRef(null), playTimer = useRef(null);
   const playbackEpoch = useRef(0), mounted = useRef(true), current = useRef(state);
   current.current = state;
@@ -314,11 +316,19 @@ function App() {
     const onVisibility = () => {
       if (document.hidden) { stopPlayback(); cancelGesture(); }
     };
+    // A drop can target another element if capture is unavailable or released.
+    // Observe it before another target's handlers can stop propagation.
+    const onRelease = event => gestureActions.current.release(event);
+    const onCancel = event => gestureActions.current.cancel(event);
     window.addEventListener('keydown', onKey);
+    window.addEventListener('pointerup', onRelease, true);
+    window.addEventListener('pointercancel', onCancel, true);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       mounted.current = false;
       observer.disconnect(); window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointerup', onRelease, true);
+      window.removeEventListener('pointercancel', onCancel, true);
       document.removeEventListener('visibilitychange', onVisibility);
       gesture.current?.preview?.cancel(); gesture.current = null;
       clearTimeout(autoSaveTimer.current); cancelAnimationFrame(draftFrame.current);
@@ -387,15 +397,20 @@ function App() {
     }
   }
   function pointerMove(event) {
+    const g = gesture.current;
+    if (g?.type === 'move' && event.pointerId === g.pointerId && event.pointerType === 'mouse' && event.buttons === 0) {
+      // Recover a missed release without following later, unpressed hover moves.
+      pointerUp(event, false); return;
+    }
     const samples = event.nativeEvent.getCoalescedEvents?.() ?? [];
     if (gesture.current?.type === 'move') sample(samples.at(-1) || event);
     else if (samples.length) samples.forEach(sample);
     else sample(event);
   }
-  function pointerUp(event) {
+  function pointerUp(event, sampleEnd = true) {
     const g = gesture.current;
     if (!g || event.pointerId !== g.pointerId) return;
-    sample(event);
+    if (sampleEnd) sample(event);
     if (g.preview) {
       g.preview.finish(g.position);
       g.node.setAttribute('transform', `translate(${g.position.x * g.size.width} ${g.position.y * g.size.height})`);
@@ -417,6 +432,14 @@ function App() {
   }
   function cancelPointer(event) {
     if (gesture.current?.pointerId === event.pointerId) { cancelGesture(); stopPlayback(); }
+  }
+  function lostCapture(event) {
+    const g = gesture.current;
+    if (g?.pointerId !== event.pointerId) return;
+    // Losing capture is not a request to undo a move. Its coordinates may be
+    // absent, so retain the final sampled position, exactly once.
+    if (g.type === 'move' && g.moved) pointerUp(event, false);
+    else cancelPointer(event);
   }
 
   async function playSelected() {
@@ -507,7 +530,7 @@ function App() {
       onChange={event => { const file = event.target.files[0]; event.target.value = ''; importProjectFile(file); }} />
     <svg ref={svg} className={`canvas${moving ? ' moving' : ''}`} aria-label="Sound sketchbook" role="group"
       onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp}
-      onPointerCancel={cancelPointer} onLostPointerCapture={cancelPointer}>
+      onPointerCancel={cancelPointer} onLostPointerCapture={lostCapture}>
       {state.paths.map((path, index) => <StoredPath key={path.id} path={path} size={size}
         selected={path.id === state.selected && !draft} index={index} onSelect={dispatch}
         opacity={Math.max(.3, .55 + .3 * index / Math.max(1, state.paths.length - 1))} />)}

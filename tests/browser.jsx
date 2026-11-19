@@ -93,6 +93,36 @@ document.querySelector('#run').onclick = async () => {
     await pointer('pointermove', .61, .58, 400, 'touch');
     await pointer('pointerup', .61, .58, 400, 'touch');
     check(document.querySelector('[data-sound="seed-2"]').getAttribute('transform') !== transform && calls.length === beforeDrag && document.querySelectorAll('.path').length === 1, 'Touch dragging moves a circle without auditioning or drawing');
+    const releaseSound = () => document.querySelector('[data-sound="seed-2"]');
+    const releaseStart = releaseSound().getAttribute('transform');
+    await pointer('pointerdown', .61, .58, 0, 'mouse', releaseSound().querySelector('circle'));
+    await pointer('pointermove', .67, .62, 300);
+    const expectedDrop = releaseSound().style.transform;
+    // Capture notifications carry no reliable final pointer coordinates.
+    canvas.dispatchEvent(new PointerEvent('lostpointercapture', { bubbles: true, pointerId: 1 })); await frame();
+    const recoveredPosition = releaseSound().transform.baseVal.getItem(0).matrix, recoveredBounds = canvas.getBoundingClientRect();
+    check(Math.abs(recoveredPosition.e / recoveredBounds.width - .67) < .001 && Math.abs(recoveredPosition.f / recoveredBounds.height - .62) < .001 && releaseSound().style.transform === '' && expectedDrop !== '', 'Losing capture retains the last dragged position instead of snapping back');
+    const committedDrop = releaseSound().getAttribute('transform');
+    await pointer('pointerup', .67, .62, 320);
+    check(releaseSound().getAttribute('transform') === committedDrop && !canvas.classList.contains('moving'), 'A later release cannot overwrite or duplicate the committed drop');
+    $('Undo').click(); await frame();
+    check(releaseSound().getAttribute('transform') === releaseStart, 'A recovered drop remains exactly one undoable move');
+    await pointer('pointerdown', .61, .58, 0, 'mouse', releaseSound().querySelector('circle'));
+    await pointer('pointermove', .64, .60, 200);
+    await pointer('pointerup', .69, .63, 300, 'mouse', $('Undo'));
+    const outsideDrop = releaseSound().transform.baseVal.getItem(0).matrix;
+    check(Math.abs(outsideDrop.e / canvas.getBoundingClientRect().width - .69) < .001 && !canvas.classList.contains('moving'), 'Releasing outside the canvas commits the actual release position');
+    $('Undo').click(); await frame();
+    check(releaseSound().getAttribute('transform') === releaseStart, 'A release outside the canvas creates one Undo step');
+    await pointer('pointerdown', .61, .58, 0, 'mouse', releaseSound().querySelector('circle'));
+    await pointer('pointermove', .65, .61, 200);
+    const hoverDrop = releaseSound().style.transform;
+    const hoverBounds = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, pointerType: 'mouse', buttons: 0, clientX: hoverBounds.left + hoverBounds.width * .9, clientY: hoverBounds.top + hoverBounds.height * .9 })); await frame();
+    const hoverPosition = releaseSound().transform.baseVal.getItem(0).matrix;
+    check(hoverDrop !== '' && Math.abs(hoverPosition.e / hoverBounds.width - .65) < .001 && !canvas.classList.contains('moving'), 'A missed mouse release ends at the last pressed position without following hover movement');
+    $('Undo').click(); await frame();
+    check(releaseSound().getAttribute('transform') === releaseStart, 'A recovered mouse release creates exactly one Undo step');
     $('Replay selected path').click(); await frame();
     check(JSON.stringify(replays.at(-1).events) === JSON.stringify(captured.events), 'Moving the sound preserves the earlier path sequence and timing');
     $('Stop playback').click(); await frame();
@@ -526,7 +556,7 @@ document.querySelector('#run').onclick = async () => {
     check(dragReads === 1 && dragNode.style.transform === '' && dragNode.style.willChange === '' && dragNode.getAttribute('transform') !== dragStart, 'A complete dense touch drag reads layout once and commits its final position');
     $('Undo').click(); await frame();
     check(dragNode.getAttribute('transform') === dragStart, 'One Undo restores the entire dense drag');
-    for (const cancelType of ['pointercancel', 'escape', 'lostpointercapture']) {
+    for (const cancelType of ['pointercancel', 'escape']) {
       densePointer('pointerdown', 0, 0, dragNode.querySelector('.sound-target')); await frame();
       densePointer('pointermove', -25, 12); await frame();
       densePointer('pointermove', -45, 16); // Cancel with a frame still pending.
@@ -535,6 +565,17 @@ document.querySelector('#run').onclick = async () => {
       await frame(); densePointer('pointerup', -45, 16); await frame();
       check(dragNode.getAttribute('transform') === dragStart && dragNode.style.transform === '' && !canvas.classList.contains('moving'), `Canceling via ${cancelType} restores the sound and discards pending movement`);
     }
+    densePointer('pointerdown', 0, 0, dragNode.querySelector('.sound-target')); await frame();
+    densePointer('pointermove', -25, 12); await frame();
+    densePointer('pointermove', -45, 16);
+    canvas.dispatchEvent(new PointerEvent('lostpointercapture', { bubbles: true, pointerId: 1 })); await frame();
+    const lostDrop = dragNode.getAttribute('transform');
+    const lostMatrix = dragNode.transform.baseVal.getItem(0).matrix;
+    check(Math.abs(lostMatrix.e - Math.max(40, dragMatrix.e - 45)) < .01 && Math.abs(lostMatrix.f - Math.min(dragBounds.height - 40, dragMatrix.f + 16)) < .01 && dragNode.style.transform === '' && !canvas.classList.contains('moving'), 'Capture loss commits the pending final frame of a maximum-size custom sound');
+    densePointer('pointerup', 0, 0); await frame();
+    check(dragNode.getAttribute('transform') === lostDrop, 'A late pointerup cannot reset a custom sound after capture loss');
+    $('Undo').click(); await frame();
+    check(dragNode.getAttribute('transform') === dragStart, 'A maximum-size custom drop survives capture loss as one undoable move');
     canvas.getBoundingClientRect = originalRect;
     $('Share sketch').click();
     for (let i = 0; i < 600 && !$('Shareable sketch link'); i++) await pause(100);
