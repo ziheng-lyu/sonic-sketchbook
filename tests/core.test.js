@@ -152,9 +152,10 @@ test('unused defaults stay spaced in the top-right corner on desktop and narrow 
   for (const size of [{ width: 1280, height: 720 }, { width: 320, height: 640 }]) {
     const positions = initialState().sounds.map(sound => soundPosition(sound, size));
     const xs = positions.map(p => p.x * size.width);
-    assert.ok(positions.every(p => p.y * size.height <= 64));
+    assert.ok(positions.every(p => p.y * size.height <= (size.width <= 600 ? 104 : 44)));
     assert.ok(xs[0] >= size.width - 328);
     assert.equal(xs.at(-1), size.width - 40);
+    if (size.width <= 600) assert.ok(positions.every(p => p.y * size.height - 34 > 60));
     for (let i = 1; i < xs.length; i++) assert.ok(xs[i] - xs[i - 1] >= 44);
   }
 });

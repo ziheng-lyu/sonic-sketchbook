@@ -4,7 +4,7 @@ function defaultSoundPosition(index, size) {
   const gap = Math.min(72, Math.max(0, (size.width - 80) / 4));
   return keepOnCanvas({
     x: (size.width - 40 - (4 - index) * gap) / size.width,
-    y: Math.min(size.height / 2, size.width <= 600 ? 64 : 44) / size.height,
+    y: Math.min(size.height / 2, size.width <= 600 ? 104 : 44) / size.height,
   }, size);
 }
 
