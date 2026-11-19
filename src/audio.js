@@ -28,6 +28,7 @@ export class AudioEngine {
     this.buffers = new Map();
     this.sources = new Map();
     this.voices = new Set();
+    this.passages = new Map();
   }
   context() {
     if (!this.ctx) {
@@ -54,15 +55,47 @@ export class AudioEngine {
     if (ctx.state !== 'running') await ctx.resume();
     return ctx;
   }
-  play(id, when) {
+  play(id, when, envelope = null) {
     const ctx = this.context(), buffer = this.buffers.get(id);
     if (!buffer) return null;
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.output);
+    const start = when ?? ctx.currentTime;
+    if (envelope) {
+      source.level = ctx.createGain();
+      source.connect(source.level); source.level.connect(this.output);
+      source.level.gain.setValueAtTime(envelope[0].gain, start);
+      for (const point of envelope.slice(1)) source.level.gain.linearRampToValueAtTime(point.gain, start + point.at / 1000);
+    } else source.connect(this.output);
     this.voices.add(source);
-    source.onended = () => { this.voices.delete(source); source.disconnect(); };
-    source.start(when ?? ctx.currentTime);
+    source.onended = () => {
+      this.voices.delete(source); source.disconnect(); source.level?.disconnect();
+      if (source.passage) this.passages.delete(source.passage);
+    };
+    source.start(start);
+    if (envelope?.length > 1) source.stop(start + envelope.at(-1).at / 1000 + .005);
+    return source;
+  }
+  listen({ event, fresh, points, closed }) {
+    let source = this.passages.get(event);
+    if (fresh) {
+      source = this.play(event.soundId, undefined, [{ at: 0, gain: points[0]?.gain ?? 0 }]);
+      if (!source) return;
+      source.passage = event; this.passages.set(event, source);
+    }
+    if (!source || !points.length) return;
+    const param = source.level.gain, now = this.context().currentTime;
+    if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(now);
+    else { const value = param.value; param.cancelScheduledValues(now); param.setValueAtTime(value, now); }
+    // Brief smoothing prevents clicks. Sparse samples still produce an audible
+    // passage; they never schedule long, delayed playback after the gesture.
+    const span = points.at(-1).at - points[0].at;
+    const horizon = Math.max(.012, Math.min(.04, span / 1000));
+    points.forEach((point, index) => {
+      const fraction = span > 0 ? (point.at - points[0].at) / span : (index + 1) / points.length;
+      param.linearRampToValueAtTime(point.gain, now + .003 + fraction * horizon);
+    });
+    if (closed) { source.stop(now + .003 + horizon + .005); this.passages.delete(event); }
     return source;
   }
   async audition(id) { await this.unlock(); this.play(id); }
@@ -92,14 +125,15 @@ export class AudioEngine {
   }
   stop() {
     for (const source of this.voices) { try { source.stop(); } catch { /* Already ended. */ } }
-    this.voices.clear();
+    this.voices.clear(); this.passages.clear();
   }
   replay(path) {
     const start = this.context().currentTime + .025;
     let end = path.duration / 1000;
     for (const event of path.events) {
-      this.play(event.soundId, start + event.at / 1000);
-      end = Math.max(end, event.at / 1000 + (this.buffers.get(event.soundId)?.duration ?? 0));
+      this.play(event.soundId, start + event.at / 1000, event.envelope);
+      const length = this.buffers.get(event.soundId)?.duration ?? 0;
+      end = Math.max(end, event.at / 1000 + (event.envelope ? Math.min(length, event.envelope.at(-1).at / 1000 + .005) : length));
     }
     return (end + .025) * 1000;
   }

@@ -17,7 +17,9 @@ button { font: inherit; }
 .sound { cursor: grab; outline: none; }
 .moving, .moving .sound { cursor: grabbing; }
 .sound-target { fill: transparent; }
-.sound-mark { fill: #eeede8; stroke: #a7a49a; stroke-width: 1.2; }
+.sound-field { fill: #d9d6ce; fill-opacity: .24; pointer-events: none; }
+.sound-inner { fill: #ccc8bc; fill-opacity: .18; pointer-events: none; }
+.sound-mark { fill: #ddd9ce; stroke: #aaa598; stroke-width: 1; pointer-events: none; }
 .sound:hover .sound-mark { stroke: #77756f; }
 .sound:focus-visible .sound-mark { stroke: #4e4d48; stroke-width: 2; }
 .controls {

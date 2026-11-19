@@ -2,7 +2,8 @@ import React, { memo, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { createRoot } from 'react-dom/client';
 import { AudioEngine } from './audio.js';
 import { Microphone } from './recorder.js';
-import { crossings, keepOnCanvas, nearestPath, soundPosition, SOUND_RADIUS } from './geometry.js';
+import { keepOnCanvas, nearestPath, soundPosition, SOUND_RADIUS } from './geometry.js';
+import { ListeningGesture } from './listening.js';
 import { initialState, reducer } from './model.js';
 import { isSavedLink, loadSketch, saveSketch } from './share.js';
 import * as projectStore from './projects.js';
@@ -277,6 +278,7 @@ function App() {
   useEffect(() => {
     const observer = new ResizeObserver(entries => {
       const { width, height } = entries[0].contentRect;
+      if (gesture.current) stopPlayback();
       gesture.current = null;
       setDraft(null); setMoving(null);
       setSize({ width: Math.max(1, width), height: Math.max(1, height) });
@@ -323,7 +325,7 @@ function App() {
     const base = { pointerId: event.pointerId, started: event.timeStamp, start: p, moved: false, size: { ...size } };
     gesture.current = sound
       ? { ...base, type: 'move', sound, position: { x: sound.x, y: sound.y } }
-      : { ...base, type: 'draw', points: [p], events: [], sounds: viewSounds };
+      : { ...base, type: 'draw', points: [p], listening: new ListeningGesture(viewSounds, size) };
     svg.current.setPointerCapture(event.pointerId);
     if (sound) setMoving({ id: sound.id, x: sound.x, y: sound.y });
   }
@@ -340,9 +342,7 @@ function App() {
     } else {
       const previous = g.points.at(-1);
       if (p.x === previous.x && p.y === previous.y && p.t === previous.t) return;
-      const entered = crossings(previous, p, g.sounds, g.size);
-      g.events.push(...entered.map(({ soundId, at }) => ({ soundId, at })));
-      entered.forEach(entry => audition(entry.soundId));
+      if (g.moved) g.listening.advance(previous, p).forEach(update => engine.current.listen(update));
       g.points.push(p);
       if (g.moved && draftFrame.current === null) draftFrame.current = requestAnimationFrame(() => {
         draftFrame.current = null;
@@ -365,14 +365,16 @@ function App() {
       if (g.moved) dispatch({ type: 'move', id: g.sound.id, position: g.position });
       else audition(g.sound.id);
     } else if (g.moved) {
-      dispatch({ type: 'path', path: { id: crypto.randomUUID(), points: g.points, events: g.events, duration: Math.max(0, event.timeStamp - g.started) } });
+      const duration = Math.max(0, event.timeStamp - g.started);
+      g.listening.finish(duration).forEach(update => engine.current.listen(update));
+      dispatch({ type: 'path', path: { id: crypto.randomUUID(), points: g.points, events: g.listening.events, duration } });
     } else {
       const hit = nearestPath({ x: g.start.x * size.width, y: g.start.y * size.height }, state.paths, size);
       if (hit) dispatch({ type: 'select', id: hit });
     }
   }
   function cancelPointer(event) {
-    if (gesture.current?.pointerId === event.pointerId) { gesture.current = null; setDraft(null); setMoving(null); }
+    if (gesture.current?.pointerId === event.pointerId) { gesture.current = null; setDraft(null); setMoving(null); stopPlayback(); }
   }
 
   async function playSelected() {
@@ -482,8 +484,10 @@ function App() {
               dispatch({ type: 'move', id: sound.id, position: keepOnCanvas({ x: sound.x + x / size.width, y: sound.y + y / size.height }, size) });
             }
           }}>
-          <circle r="22" className="sound-target" />
-          <circle r={SOUND_RADIUS} className="sound-mark" />
+          <circle r="18" className="sound-target" />
+          <circle r={SOUND_RADIUS} className="sound-field" />
+          <circle r="19" className="sound-inner" />
+          <circle r="7" className="sound-mark" />
         </g>;
       })}
     </svg>

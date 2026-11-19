@@ -18,7 +18,7 @@ The included workflow tests, builds, and publishes the app when `main` changes. 
 ## Interactions
 
 - Click or tap a circle to audition it. Drag a circle to move it.
-- Draw on empty canvas to make a listening path. Entering a circle triggers its sound; leaving and returning triggers it again. Sound playback can overlap naturally.
+- Draw on empty canvas to make a listening path. Entering a sound area starts its sound. Loudness follows distance continuously: the center is loudest, the outer edge is silent. Leaving fades the sound out; returning starts it again. Pausing does not restart or loop audio. Clips retain their original duration.
 - A released path stays visible and becomes selected. Tap an earlier line to select it. The play icon replays the selected path; it becomes a stop icon during playback.
 - Upload audio files or use the microphone icon to begin and finish a recording. Files dropped on the canvas also work.
 - Undo reverses the latest drawing, sound movement, or sound addition. A multi-file upload is one action.
@@ -33,7 +33,9 @@ Five identical circles begin in a compact row at the top right, leaving the main
 
 Five distinct nonverbal sounds are synthesized as original PCM buffers in Web Audio. Imported and recorded material is decoded into the same buffer registry. There is no remote processing, interpretation, recommendation, or generation in response to marks.
 
-Pointer events support mouse, pen and touch. Circle entry is tested against each complete movement segment so sparse pointer samples still detect fast crossings in spatial order. Timing is interpolated between gesture samples. Stationary samples and the gesture duration retain pauses. Each completed path stores its sound IDs and trigger times independently of circle positions. Replay schedules those original events directly on the audio clock, including repeated sounds and overlapping tails.
+Each material has a larger, softly shaded area and a small center handle. The outer area accepts drawing; grab the center to rearrange a sound.
+
+Pointer events support mouse, pen and touch. Circle entry is tested against each complete movement segment so sparse pointer samples still detect fast crossings in spatial order. Timing is interpolated between gesture samples. Stationary samples and the gesture duration retain pauses. Each completed path stores its sound IDs and trigger times independently of circle positions. Replay schedules those original events and their recorded gain envelopes directly on the audio clock. Previously saved paths without envelopes retain their original constant-volume playback. Moving circles or resizing the canvas does not reinterpret earlier listening gestures.
 
 Paths and positions scale with the canvas. Edge circles remain reachable on small screens. An interrupted pointer gesture is discarded; completed marks remain. Playback stops when the page is hidden. Recording tracks are released on stop, error, or teardown.
 
@@ -65,8 +67,8 @@ For local integration testing, run `node tests/storage-server.mjs` in one termin
 
 ## Verification
 
-`npm test` runs 31 checks covering crossing geometry, timing, selection, undo, distinct PCM buffers, replay scheduling, decoded audio, microphone lifecycle, encrypted snapshot round trips, cross-client reopening, retained undo, upload authorization, immutable saves, and malformed links.
+`npm test` runs 39 checks covering crossing geometry, timing, selection, undo, distinct PCM buffers, replay scheduling, decoded audio, microphone lifecycle, encrypted snapshot round trips, cross-client reopening, retained undo, upload authorization, immutable saves, malformed links, proximity gain, fast passages, and retained volume envelopes.
 
-With the dev server running, open `/tests/browser.html` and click **Run browser checks**. The development-only page exercises the actual React event handlers, Web Audio buffers and clock, real WAV decoding, and real MediaRecorder encoding/decoding from a controlled audio stream. It checks touch event handling, importing, recording, permission denial, failed imports, and responsive layouts. The full browser suite covers 54 checks, including project save/open/new, automatic local saves, refresh recovery, import/export, storage-quota recovery, project deletion and recovery, deferring autosave during gestures, and an actual WAV file larger than 20 MB that is saved, shared, and reopened. The local integration service keeps test uploads off production. The automated tests also exercise a 26 MB chunked share and backward compatibility for older links. The test page is excluded from the production build. Native browser gestures also verified circle audition, dragging, multiple paths, selection, and replay controls.
+With the dev server running, open `/tests/browser.html` and click **Run browser checks**. The development-only page exercises the actual React event handlers, Web Audio buffers and clock, real WAV decoding, and real MediaRecorder encoding/decoding from a controlled audio stream. It checks touch event handling, importing, recording, permission denial, failed imports, and responsive layouts. It also measures real audio signal levels at the edge and center of a sound field, checks continuous retreat to silence, and verifies that replay retains the volume contour. The full browser suite covers 63 checks, including project save/open/new, automatic local saves, refresh recovery, import/export, storage-quota recovery, project deletion and recovery, deferring autosave during gestures, and an actual WAV file larger than 20 MB that is saved, shared, and reopened. The local integration service keeps test uploads off production. The automated tests also exercise a 26 MB chunked share and backward compatibility for older links. The test page is excluded from the production build. Native browser gestures also verified circle audition, dragging, multiple paths, selection, and replay controls.
 
 Microphone integration is verified with a controlled stream. Physical microphone hardware and a separate physical touch device have not been tested.

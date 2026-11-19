@@ -57,7 +57,7 @@ export function unpackState(data, externalSources = null) {
   if (!data.frames.length || data.frames.length > 10000 || data.paths.length > 2000 || data.assets.length > 500) return invalid();
   const knownSounds = new Set(['seed-0', 'seed-1', 'seed-2', 'seed-3', 'seed-4']);
   const sources = new Map();
-  let totalBytes = 0, totalPoints = 0;
+  let totalBytes = 0, totalPoints = 0, totalEnvelopePoints = 0;
   for (const asset of data.assets) {
     if (!idOK(asset.id) || knownSounds.has(asset.id)) return invalid();
     const external = externalSources?.get(asset.id);
@@ -83,7 +83,20 @@ export function unpackState(data, externalSources = null) {
     const events = path.events.map(event => {
       if (!knownSounds.has(event.soundId) || !finite(event.at) || event.at < lastTime || event.at > path.duration) return invalid();
       lastTime = event.at;
-      return { soundId: event.soundId, at: event.at };
+      let envelope;
+      if (event.envelope !== undefined) {
+        if (!Array.isArray(event.envelope) || event.envelope.length < 2) return invalid();
+        totalEnvelopePoints += event.envelope.length;
+        if (totalEnvelopePoints > 2000000) return invalid();
+        let lastAt = 0;
+        envelope = event.envelope.map(point => {
+          if (!finite(point.at) || point.at < lastAt || point.at > path.duration - event.at + 20 || !finite(point.gain) || point.gain < 0 || point.gain > 1) return invalid();
+          lastAt = point.at;
+          return { at: point.at, gain: point.gain };
+        });
+        if (envelope[0].at !== 0 || envelope.at(-1).gain !== 0) return invalid();
+      }
+      return { soundId: event.soundId, at: event.at, ...(envelope ? { envelope } : {}) };
     });
     return { id: path.id, points, events, duration: path.duration };
   });

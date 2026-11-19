@@ -4,9 +4,9 @@ import { AudioEngine } from '../src/audio.js';
 const calls = [], replays = [];
 const originalPlay = AudioEngine.prototype.play;
 const originalReplay = AudioEngine.prototype.replay;
-AudioEngine.prototype.play = function (id, when) {
-  const source = originalPlay.call(this, id, when);
-  calls.push({ id, when, buffer: source?.buffer, state: this.context().state });
+AudioEngine.prototype.play = function (id, when, envelope) {
+  const source = originalPlay.call(this, id, when, envelope);
+  calls.push({ id, when, source, envelope, buffer: source?.buffer, state: this.context().state });
   return source;
 };
 AudioEngine.prototype.replay = function (path) {
@@ -24,8 +24,8 @@ function check(condition, name) {
   document.querySelector('#results').append(row);
   if (!condition) throw new Error(name);
 }
-function wav() {
-  const length = 4410, view = new DataView(new ArrayBuffer(44 + length * 2));
+function wav(duration = .1) {
+  const length = Math.round(44100 * duration), view = new DataView(new ArrayBuffer(44 + length * 2));
   const text = (offset, value) => [...value].forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)));
   text(0, 'RIFF'); view.setUint32(4, 36 + length * 2, true); text(8, 'WAVE'); text(12, 'fmt ');
   view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
@@ -60,7 +60,7 @@ document.querySelector('#run').onclick = async () => {
     check(document.querySelectorAll('[data-sound]').length === 5 && document.querySelectorAll('.path').length === 0, 'Five identical starting materials; empty sketchbook');
     const homeBounds = canvas.getBoundingClientRect();
     const homes = [...document.querySelectorAll('[data-sound]')].map(node => node.transform.baseVal.getItem(0).matrix);
-    check(homes.every(p => p.f <= 64) && homes.at(-1).e >= homeBounds.width - 33, 'Defaults begin in a compact top-right row, leaving the main canvas open');
+    check(homes.every(p => p.f <= 64) && homes.at(-1).e >= homeBounds.width - 37, 'Defaults begin in a compact top-right row, leaving the main canvas open');
     // Move the materials into the workspace to exercise the listening gestures.
     const workspace = [[.25, .31], [.63, .23], [.46, .49], [.75, .62], [.28, .72]];
     for (let i = 0; i < workspace.length; i++) {
@@ -298,6 +298,41 @@ document.querySelector('#run').onclick = async () => {
     const lastMaterial = document.querySelectorAll('[data-sound]')[loadedCount - 1];
     lastMaterial.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })); await frame();
     check(calls.at(-1).buffer instanceof AudioBuffer, 'Audio in a restored deleted project still plays');
+    check([...document.querySelectorAll('.sound-field')].every(node => node.r.baseVal.value === 28) && [...document.querySelectorAll('.sound-mark')].every(node => node.r.baseVal.value === 7), 'Larger sound fields have a soft outer area and a smaller draggable center');
+    const sustained = new DataTransfer(); sustained.items.add(wav(2)); input.files = sustained.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 100 && document.querySelectorAll('[data-sound]').length === loadedCount; i++) await pause(50);
+    await waitIdle();
+    const field = [...document.querySelectorAll('[data-sound]')].at(-1), fieldId = field.dataset.sound;
+    const position = field.transform.baseVal.getItem(0).matrix, bounds = canvas.getBoundingClientRect();
+    const atField = (dx, dy, t, type = 'pointermove') => pointer(type, (position.e + dx) / bounds.width, (position.f + dy) / bounds.height, t);
+    await atField(-40, 0, 0, 'pointerdown'); await atField(-24, 0, 100);
+    const liveSource = calls.filter(call => call.id === fieldId).at(-1)?.source;
+    check(!!liveSource?.level, 'Drawing through the expanded outer area starts a real audio voice with its own gain node');
+    const audioContext = liveSource.context, analyser = audioContext.createAnalyser(), silent = audioContext.createGain();
+    analyser.fftSize = 1024; silent.gain.value = 0;
+    liveSource.level.connect(analyser); analyser.connect(silent); silent.connect(audioContext.destination);
+    const rms = () => { const values = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(values); return Math.sqrt(values.reduce((sum, v) => sum + v * v, 0) / values.length); };
+    await pause(80); const edgeGain = liveSource.level.gain.value, edgeRms = rms();
+    check(edgeGain > 0 && edgeGain < .1 && edgeRms > 0, 'The outer area produces quiet, measurable audio');
+    await atField(0, 0, 220); await pause(80); const centerGain = liveSource.level.gain.value, centerRms = rms();
+    check(centerGain > .99 && centerRms > edgeRms * 8, 'Approaching the center continuously increases the actual audio signal');
+    const passagesBeforePause = calls.filter(call => call.id === fieldId).length;
+    await pause(120); await atField(0, 0, 420);
+    check(calls.filter(call => call.id === fieldId).length === passagesBeforePause, 'Pausing in a sound area does not retrigger or loop it');
+    await atField(24, 0, 520); await pause(80);
+    check(liveSource.level.gain.value < .1 && rms() < centerRms * .2, 'Moving back toward the edge reduces actual audio continuously');
+    await atField(40, 0, 620); await atField(40, 0, 640, 'pointerup'); await pause(100);
+    check(liveSource.level.gain.value === 0, 'Leaving the field fades the voice to silence');
+    analyser.disconnect(); silent.disconnect();
+    $('Replay selected path').click(); await frame();
+    const volumePath = replays.at(-1), volumeEvent = volumePath.events.find(event => event.soundId === fieldId);
+    check(volumeEvent?.envelope.some(p => p.gain > .99) && volumeEvent.envelope.at(-1).gain === 0 && calls.filter(call => call.id === fieldId).at(-1).envelope?.length > 2, 'Replay schedules the original continuous volume contour');
+    $('Stop playback').click(); await frame();
+    field.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' })); await frame();
+    $('Replay selected path').click(); await frame();
+    check(JSON.stringify(replays.at(-1).events) === JSON.stringify(volumePath.events), 'Rearranging a sound preserves the saved listening volume and timing');
+    $('Stop playback').click(); await frame();
     const summary = document.createElement('strong'); summary.textContent = 'All browser checks passed.'; document.querySelector('#report').append(summary);
   } catch (error) {
     const summary = document.createElement('strong'); summary.textContent = `Browser checks stopped: ${error.message}`; document.querySelector('#report').append(summary);

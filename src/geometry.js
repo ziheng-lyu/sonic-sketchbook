@@ -1,8 +1,8 @@
-export const SOUND_RADIUS = 16;
+export const SOUND_RADIUS = 28;
 function defaultSoundPosition(index, size) {
-  const gap = Math.min(48, Math.max(0, (size.width - 64) / 4));
+  const gap = Math.min(56, Math.max(0, (size.width - 72) / 4));
   return keepOnCanvas({
-    x: (size.width - 32 - (4 - index) * gap) / size.width,
+    x: (size.width - 36 - (4 - index) * gap) / size.width,
     y: Math.min(size.height / 2, size.width <= 600 ? 64 : 40) / size.height,
   }, size);
 }
@@ -66,6 +66,6 @@ export function nearestPath(point, paths, size, tolerance = 9) {
 }
 
 export function keepOnCanvas(point, size) {
-  const mx = Math.min(.5, 24 / size.width), my = Math.min(.5, 24 / size.height);
+  const mx = Math.min(.5, 34 / size.width), my = Math.min(.5, 34 / size.height);
   return { x: Math.max(mx, Math.min(1 - mx, point.x)), y: Math.max(my, Math.min(1 - my, point.y)) };
 }
